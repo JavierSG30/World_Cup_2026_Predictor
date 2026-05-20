@@ -354,74 +354,169 @@ elif page == "🎲 Run a Simulation":
 
         with st.spinner("Simulating tournament..."):
             progress, group_pts = simulate_once(prob_cache)
+            np.random.seed(seed)
+            from src.predict import ko_match
+            group_standings = {}
+            all_pts2, all_gd2, all_gf2 = {}, {}, {}
+            for gname, teams in _GROUPS.items():
+                ranked, pts, gd, gf = simulate_group(teams, prob_cache)
+                group_standings[gname] = ranked
+                for t in teams:
+                    all_pts2[t]=pts[t]; all_gd2[t]=gd[t]; all_gf2[t]=gf[t]
+
+            thirds2 = [group_standings[g][2] for g in _GROUPS]
+            thirds_ranked2 = sorted(thirds2, key=lambda t:(all_pts2[t],all_gd2[t],all_gf2[t]), reverse=True)
+            thirds_ws2 = [(t,all_pts2[t],all_gd2[t],all_gf2[t]) for t in thirds_ranked2]
+            used2 = set(); third_slot2 = {}
+            for s1,s2 in R32_BRACKET:
+                for slot in (s1,s2):
+                    if slot.startswith("3"):
+                        allowed = set(slot[1:])
+                        for t,_,_,_ in thirds_ws2:
+                            grp = next(g for g,r in group_standings.items() if r[2]==t)
+                            if grp in allowed and t not in used2:
+                                used2.add(t); third_slot2[slot]=t; break
+
+            def get_slot2(s):
+                if s.startswith("1"): return group_standings[s[1]][0]
+                elif s.startswith("2"): return group_standings[s[1]][1]
+                else: return third_slot2.get(s,"TBD")
+
+            r32=[]; r16=[]; qf=[]; sf=[]
+            for s1,s2 in R32_BRACKET:
+                t1,t2=get_slot2(s1),get_slot2(s2)
+                w=ko_match(t1,t2,prob_cache); r32.append((t1,t2,w))
+            for i1,i2 in R16_PAIRS:
+                t1,t2=r32[i1][2],r32[i2][2]
+                w=ko_match(t1,t2,prob_cache); r16.append((t1,t2,w))
+            for i1,i2 in QF_PAIRS:
+                t1,t2=r16[i1][2],r16[i2][2]
+                w=ko_match(t1,t2,prob_cache); qf.append((t1,t2,w))
+            for i1,i2 in SF_PAIRS:
+                t1,t2=qf[i1][2],qf[i2][2]
+                w=ko_match(t1,t2,prob_cache); sf.append((t1,t2,w))
+            champion = ko_match(sf[0][2],sf[1][2],prob_cache)
 
         st.success(f"Simulation complete! (seed: {seed})")
-        st.divider()
 
-        # ── Group results ──────────────────────────────────────────────────────
-        st.subheader("Group Stage Results")
-
-        # Reconstruct group standings from progress + group_pts
-        all_teams_list = [t for g in _GROUPS.values() for t in g]
-
-        # Rerun group stage deterministically with same seed for display
-        np.random.seed(seed)
-        group_standings = {}
-        gp_all = {}
-        gd_all = {}
-        gf_all = {}
-
-        for gname, teams in _GROUPS.items():
-            ranked, pts, gd, gf = simulate_group(teams, prob_cache)
-            group_standings[gname] = ranked
-            for t in teams:
-                gp_all[t] = pts[t]
-                gd_all[t] = gd[t]
-                gf_all[t] = gf[t]
-
-        cols = st.columns(3)
+        # Group Stage
+        st.subheader("Group Stage")
+        gcols = st.columns(3)
         for i, (gname, ranked) in enumerate(group_standings.items()):
-            with cols[i % 3]:
+            with gcols[i % 3]:
                 st.markdown(f"**Group {gname}**")
                 rows = []
                 for pos, team in enumerate(ranked, 1):
-                    adv = "✓" if pos <= 2 else ""
-                    rows.append({
-                        "Pos": pos, "Team": team,
-                        "Pts": gp_all[team], "GD": gd_all[team],
-                        "→": adv
-                    })
-                gdf = pd.DataFrame(rows).set_index("Pos")
-                st.dataframe(gdf, use_container_width=True, hide_index=False)
+                    adv = "✓" if pos <= 2 else ("?" if pos==3 else "")
+                    rows.append({"Pos":pos,"Team":team,"Pts":all_pts2[team],"GD":all_gd2[team],"":adv})
+                st.dataframe(pd.DataFrame(rows).set_index("Pos"), use_container_width=True)
 
         st.divider()
 
-        # ── Knockout results ───────────────────────────────────────────────────
-        st.subheader("Knockout Stage")
+        # Bracket
+        st.subheader("Knockout Bracket")
+        st.caption("Green = winner of that match | Gold = champion")
 
-        # Find champion
-        champion = next((t for t, p in progress.items() if p == "winner"), "Unknown")
-        finalist = [t for t, p in progress.items() if p in ["final","winner"]]
-        semis    = [t for t, p in progress.items() if p in ["sf","final","winner"]]
-        quarters = [t for t, p in progress.items() if p in ["qf","sf","final","winner"]]
+        def truncate(name, n=12):
+            return name if len(name) <= n else name[:n-1]+"."
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Quarter-finalists**")
-            for t in sorted(quarters): st.markdown(f"- {t}")
-        with c2:
-            st.markdown("**Semi-finalists**")
-            for t in sorted(semis): st.markdown(f"- {t}")
+        def make_bracket(r32, r16, qf, sf, champ):
+            W, H = 1100, 700
+            BG="#0f1117"; BOX="#1e2130"; WIN="#1a472a"; TEXT="#e0e0e0"
+            DIM="#555"; GOLD="#f0b429"; LINE="#444"
+            BW=105; BH=18; GAP=5; MGAP=30
+
+            out = []
+            out.append(f'<svg width="100%" viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="background:{BG};border-radius:10px;font-family:monospace">')
+
+            def b(x,y,team,winner,is_champ=False):
+                bg = GOLD if is_champ else (WIN if winner else BOX)
+                tc = "#000" if is_champ else TEXT
+                fs = 8 if len(team)>14 else 9
+                t = truncate(team, 14)
+                out.append(f'<rect x="{x:.0f}" y="{y:.0f}" width="{BW}" height="{BH}" rx="3" fill="{bg}" stroke="#333" stroke-width="0.5"/>')
+                out.append(f'<text x="{x+BW/2:.0f}" y="{y+BH/2+3:.0f}" text-anchor="middle" fill="{tc}" font-size="{fs}">{t}</text>')
+
+            def conn(x1,y1,x2,y2):
+                mx=(x1+x2)/2
+                out.append(f'<polyline points="{x1:.0f},{y1:.0f} {mx:.0f},{y1:.0f} {mx:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
+
+            def match_y(i):
+                return 30 + i*(BH*2+GAP+MGAP)
+
+            def draw_col(x, matches, cy_prev=None, cx_from=None, cx_to=None, right=False):
+                cys = []
+                for i, (t1,t2,w) in enumerate(matches):
+                    if cy_prev is not None:
+                        y1c = cy_prev[i*2]
+                        y2c = cy_prev[i*2+1]
+                        ybox = (y1c+y2c)/2 - BH - GAP/2
+                    else:
+                        ybox = match_y(i)
+                    b(x, ybox,      t1, w==t1)
+                    b(x, ybox+BH+GAP, t2, w==t2)
+                    if cy_prev is not None:
+                        if right:
+                            conn(cx_from, y1c, x+BW, ybox+BH/2)
+                            conn(cx_from, y2c, x+BW, ybox+BH+GAP+BH/2)
+                        else:
+                            conn(cx_from, y1c, x, ybox+BH/2)
+                            conn(cx_from, y2c, x, ybox+BH+GAP+BH/2)
+                    cys.append(ybox + BH + GAP/2)
+                return cys
+
+            # Left side columns
+            x0=8
+            cy0L = draw_col(x0, r32[:8])
+            x1=x0+BW+16
+            cy1L = draw_col(x1, r16[:4], cy0L, x0+BW)
+            x2=x1+BW+16
+            cy2L = draw_col(x2, qf[:2], cy1L, x1+BW)
+            x3=x2+BW+16
+            cy3L = draw_col(x3, sf[:1], cy2L, x2+BW)
+
+            # Right side columns (mirror)
+            x0r=W-8-BW
+            cy0R = draw_col(x0r, r32[8:], right=False)
+            x1r=x0r-BW-16
+            cy1R = draw_col(x1r, r16[4:], cy0R, x0r, right=True)
+            x2r=x1r-BW-16
+            cy2R = draw_col(x2r, qf[2:], cy1R, x1r, right=True)
+            x3r=x2r-BW-16
+            cy3R = draw_col(x3r, sf[1:], cy2R, x2r, right=True)
+
+            # Final
+            xfc=W//2-BW//2
+            t1f,t2f=sf[0][2],sf[1][2]
+            yf=(cy3L[0]+cy3R[0])/2-BH-GAP/2
+            b(xfc, yf,        t1f, champ==t1f)
+            b(xfc, yf+BH+GAP, t2f, champ==t2f)
+            conn(x3+BW, cy3L[0], xfc, yf+BH/2)
+            conn(x3r,   cy3R[0], xfc+BW, yf+BH+GAP+BH/2)
+
+            # Champion
+            ych = yf+BH*2+GAP+18
+            out.append(f'<rect x="{xfc:.0f}" y="{ych:.0f}" width="{BW}" height="{BH+4}" rx="4" fill="{GOLD}" stroke="#aaa" stroke-width="0.8"/>')
+            tc2 = truncate(champ, 12)
+            out.append(f'<text x="{xfc+BW/2:.0f}" y="{ych+BH/2+5:.0f}" text-anchor="middle" fill="#000" font-size="10" font-weight="bold">🏆 {tc2}</text>')
+
+            # Headers
+            for lbl,x in [("R32",x0),("R16",x1),("QF",x2),("SF",x3),("FINAL",xfc),("SF",x3r),("QF",x2r),("R16",x1r),("R32",x0r)]:
+                out.append(f'<text x="{x+BW/2:.0f}" y="22" text-anchor="middle" fill="{DIM}" font-size="8">{lbl}</text>')
+
+            out.append("</svg>")
+            return "\n".join(out)
+
+        svg_html = make_bracket(r32, r16, qf, sf, champion)
+        st.markdown(svg_html, unsafe_allow_html=True)
 
         st.divider()
-        st.markdown(f"**Finalists:** {' vs '.join(finalist)}")
-
-        st.divider()
-        st.markdown(f"## 🏆 Champion: {champion}")
+        st.markdown(f"## 🏆 Champion: **{champion}**")
         st.balloons()
 
     else:
         st.info("Click the button above to simulate a complete tournament.")
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
