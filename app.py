@@ -159,9 +159,7 @@ if page == "🏆 Overview":
     display_df.index = range(1, len(display_df) + 1)
 
     st.dataframe(
-        display_df.style.background_gradient(subset=["Win %"], cmap="Blues")
-                        .background_gradient(subset=["Qualify %"], cmap="Greens")
-                        .format({"Elo": "{:.0f}",
+        display_df.style.format({"Elo": "{:.0f}",
                                  "Qualify %": "{:.1f}%", "R32 %": "{:.1f}%",
                                  "R16 %": "{:.1f}%",     "QF %": "{:.1f}%",
                                  "SF %": "{:.1f}%",      "Final %": "{:.1f}%",
@@ -229,7 +227,6 @@ elif page == "👥 Group Stage":
 
     st.dataframe(
         detail_df.style
-            .background_gradient(subset=["Avg Points"], cmap="YlGn")
             .format({"Elo": "{:.0f}", "Avg Points": "{:.2f}",
                      "Qualify %": "{:.1f}%", "Form (Win Rate)": "{:.2f}",
                      "Form (GD/g)": "{:+.2f}"}),
