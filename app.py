@@ -362,7 +362,7 @@ elif page == "🎲 Run a Simulation":
         st.subheader("Group Stage Results")
 
         # Reconstruct group standings from progress + group_pts
-        all_teams_list = [t for g in GROUPS.values() for t in g]
+        all_teams_list = [t for g in _GROUPS.values() for t in g]
 
         # Rerun group stage deterministically with same seed for display
         np.random.seed(seed)
