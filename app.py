@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
-import pickle
 import time
 from pathlib import Path
 from collections import defaultdict
@@ -94,11 +93,14 @@ def load_results():
 
 @st.cache_resource
 def load_model():
-    with open(MODELS / "logistic_model.pkl", "rb") as f: model     = pickle.load(f)
-    with open(MODELS / "feature_cols.pkl",   "rb") as f: feat_cols = pickle.load(f)
-    with open(MODELS / "prob_cache.pkl",     "rb") as f: prob_cache = pickle.load(f)
-    with open(MODELS / "team_stats_cache.pkl","rb") as f: team_stats = pickle.load(f)
-    return model, feat_cols, prob_cache, team_stats
+    """Load precomputed data from JSON — no sklearn dependency needed."""
+    with open(ROOT / "prob_cache.json") as f:
+        raw = json.load(f)
+    prob_cache = {(k.split("||")[0], k.split("||")[1]): tuple(v) 
+                  for k, v in raw.items()}
+    with open(ROOT / "team_stats.json") as f:
+        team_stats = json.load(f)
+    return None, None, prob_cache, team_stats
 
 def results_to_df(data):
     rows = []
@@ -311,41 +313,24 @@ elif page == "⚔️ Matchup Analyser":
 
     st.divider()
 
-    # ── Feature contributions ─────────────────────────────────────────────────
-    if hasattr(model, "named_steps"):
-        st.subheader("Feature Contributions (Logistic Regression)")
-        scaler = model.named_steps["scaler"]
-        clf    = model.named_steps["clf"]
-
-        FED_COLS = ["AFC","CAF","CONCACAF","CONMEBOL","OFC","OTHER","UEFA"]
-        row = {
-            "home_elo":      h["elo"],     "away_elo":    a["elo"],
-            "elo_diff":      h["elo"]-a["elo"],
-            "home_legacy":   h["legacy"],  "away_legacy": a["legacy"],
-            "legacy_diff":   h["legacy"]-a["legacy"],
-            "home_win_rate": h["win_rate"],"away_win_rate":a["win_rate"],
-            "home_gd_pg":    h["gd_pg"],   "away_gd_pg":  a["gd_pg"],
-        }
-        for fed in FED_COLS:
-            row[f"home_federation_{fed}"] = int(h["federation"]==fed)
-            row[f"away_federation_{fed}"] = int(a["federation"]==fed)
-
-        import pandas as pd_inner
-        X = pd_inner.DataFrame([row])[feat_cols]
-        X_scaled = scaler.transform(X)
-        coef_home = clf.coef_[2]
-        coef_away = clf.coef_[0]
-
-        contributions = []
-        for i, fname in enumerate(feat_cols):
-            net = coef_home[i]*X_scaled[0][i] - coef_away[i]*X_scaled[0][i]
-            contributions.append({"Feature": fname, "Net Effect": round(net, 4),
-                                   "Favours": team1 if net > 0 else team2})
-
-        contrib_df = pd.DataFrame(contributions)
-        contrib_df = contrib_df[abs(contrib_df["Net Effect"]) > 0.005]
-        contrib_df = contrib_df.sort_values("Net Effect", key=abs, ascending=False)
-        st.dataframe(contrib_df.set_index("Feature"), use_container_width=True)
+    # ── Feature delta table ───────────────────────────────────────────────────
+    st.subheader("Feature Advantage")
+    deltas = []
+    feature_map = [
+        ("Elo Rating",          h["elo"],      a["elo"],      True),
+        ("Legacy Elo (20yr)",   h["legacy"],   a["legacy"],   True),
+        ("Win Rate (last 10)",  h["win_rate"], a["win_rate"], True),
+        ("Goal Diff/g (last 10)",h["gd_pg"],  a["gd_pg"],    True),
+    ]
+    for label, hval, aval, higher_better in feature_map:
+        diff = hval - aval
+        favours = team1 if diff > 0 else (team2 if diff < 0 else "Even")
+        deltas.append({"Feature": label,
+                        team1: round(hval, 2),
+                        team2: round(aval, 2),
+                        "Difference": round(diff, 2),
+                        "Favours": favours})
+    st.dataframe(pd.DataFrame(deltas).set_index("Feature"), use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -353,13 +338,15 @@ elif page == "⚔️ Matchup Analyser":
 # ══════════════════════════════════════════════════════════════════════════════
 
 elif page == "🎲 Run a Simulation":
-    from src.predict import (GROUPS, simulate_once, ROUNDS, reached,
-                              R32_BRACKET, R16_PAIRS, QF_PAIRS, SF_PAIRS)
-
     st.title("Run a Simulation")
     st.markdown("Simulate one complete 2026 World Cup tournament. Every run is different — this is one random draw from the probability distribution.")
 
     _, _, prob_cache, _ = load_model()
+
+    # Import only what we need — no sklearn involved
+    from src.predict import (GROUPS as _GROUPS, simulate_once, ROUNDS,
+                              reached, simulate_group,
+                              R32_BRACKET, R16_PAIRS, QF_PAIRS, SF_PAIRS)
 
     if st.button("▶ Run Tournament Simulation", type="primary"):
         seed = int(time.time() * 1000) % 100000
@@ -379,13 +366,12 @@ elif page == "🎲 Run a Simulation":
 
         # Rerun group stage deterministically with same seed for display
         np.random.seed(seed)
-        from src.predict import simulate_group
         group_standings = {}
         gp_all = {}
         gd_all = {}
         gf_all = {}
 
-        for gname, teams in GROUPS.items():
+        for gname, teams in _GROUPS.items():
             ranked, pts, gd, gf = simulate_group(teams, prob_cache)
             group_standings[gname] = ranked
             for t in teams:
