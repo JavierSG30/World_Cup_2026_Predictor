@@ -375,33 +375,92 @@ elif page == "⚔️ Matchup Analyser":
 
     model, feat_cols, prob_cache, team_stats = load_model()
 
-    # Get symmetric probabilities
+    # Match type toggle
+    match_type = st.radio(
+        "Match type",
+        ["Group Stage (draws allowed)", "Knockout (no draws)"],
+        horizontal=True,
+    )
+    is_knockout = match_type == "Knockout (no draws)"
+
+    # Get symmetric base probabilities
     p_h1, p_d1, p_a1 = prob_cache[(team1, team2)]
     p_h2, p_d2, p_a2 = prob_cache[(team2, team1)]
-    p_t1   = (p_h1 + p_a2) / 2
-    p_draw = (p_d1 + p_d2) / 2
-    p_t2   = (p_a1 + p_h2) / 2
+    p_t1_base  = (p_h1 + p_a2) / 2
+    p_draw_base = (p_d1 + p_d2) / 2
+    p_t2_base  = (p_a1 + p_h2) / 2
+
+    if is_knockout:
+        # Redistribute draw proportionally to win probabilities
+        denom  = p_t1_base + p_t2_base
+        p_t1   = p_t1_base + p_draw_base * p_t1_base / denom if denom > 0 else 0.5
+        p_t2   = p_t2_base + p_draw_base * p_t2_base / denom if denom > 0 else 0.5
+        p_draw = 0.0
+        caption = "Draw probability redistributed proportionally (extra time / penalties)"
+    else:
+        p_t1   = p_t1_base
+        p_draw = p_draw_base
+        p_t2   = p_t2_base
+        caption = "Averaged over both team orderings for neutral venue symmetry"
 
     st.divider()
 
     # ── Probability display ───────────────────────────────────────────────────
     st.subheader("Match Probabilities")
-    st.caption("Averaged over both team orderings for neutral venue symmetry")
+    st.caption(caption)
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric(f"{team1} Win", f"{p_t1*100:.1f}%")
-    with c2:
-        st.metric("Draw", f"{p_draw*100:.1f}%")
-    with c3:
-        st.metric(f"{team2} Win", f"{p_t2*100:.1f}%")
+    if is_knockout:
+        c1, c2 = st.columns(2)
+        with c1: st.metric(f"{team1} Win", f"{p_t1*100:.1f}%")
+        with c2: st.metric(f"{team2} Win", f"{p_t2*100:.1f}%")
+        outcomes = [(f"{FLAGS.get(team1,'🏳')} {team1}", p_t1*100),
+                    (f"{FLAGS.get(team2,'🏳')} {team2}", p_t2*100)]
+    else:
+        c1, c2, c3 = st.columns(3)
+        with c1: st.metric(f"{team1} Win", f"{p_t1*100:.1f}%")
+        with c2: st.metric("Draw",          f"{p_draw*100:.1f}%")
+        with c3: st.metric(f"{team2} Win", f"{p_t2*100:.1f}%")
+        outcomes = [(f"{FLAGS.get(team1,'🏳')} {team1}", p_t1*100),
+                    ("Draw",                               p_draw*100),
+                    (f"{FLAGS.get(team2,'🏳')} {team2}", p_t2*100)]
 
-    # Probability bar
-    prob_df = pd.DataFrame({
-        "Outcome": [f"{team1} Win", "Draw", f"{team2} Win"],
-        "Probability": [p_t1*100, p_draw*100, p_t2*100]
-    }).set_index("Outcome")
-    st.bar_chart(prob_df, color="#1a1a2e")
+    # Sort descending
+    outcomes_sorted = sorted(outcomes, key=lambda x: x[1], reverse=True)
+    labels_m = [o[0] for o in outcomes_sorted]
+    vals_m   = [o[1] for o in outcomes_sorted]
+    colors_m = []
+    for lbl in labels_m:
+        if team1 in lbl:   colors_m.append("#3a7bd5")
+        elif team2 in lbl: colors_m.append("#e05c5c")
+        else:              colors_m.append("#888888")
+
+    fig_m = go.Figure(go.Bar(
+        x=labels_m, y=vals_m,
+        marker_color=colors_m,
+        marker_line_width=0,
+        text=[f"{v:.1f}%" for v in vals_m],
+        textposition="outside",
+        textfont=dict(size=13, color="white"),
+    ))
+    fig_m.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white", family="DM Sans"),
+        yaxis=dict(
+            showgrid=True, gridcolor="rgba(255,255,255,0.08)",
+            gridwidth=0.5, showticklabels=True,
+            tickfont=dict(size=10, color="rgba(255,255,255,0.4)"),
+            zeroline=True, zerolinecolor="rgba(255,255,255,0.15)",
+            range=[0, max(vals_m)*1.18],
+        ),
+        xaxis=dict(
+            tickfont=dict(size=14), tickangle=0,
+            showline=True, linecolor="rgba(255,255,255,0.15)",
+        ),
+        margin=dict(t=40, b=20, l=40, r=0),
+        height=300, showlegend=False,
+    )
+    st.plotly_chart(fig_m, use_container_width=True)
 
     st.divider()
 
