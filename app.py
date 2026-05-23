@@ -535,17 +535,27 @@ elif page == "🎲 Run a Simulation":
             thirds2 = [group_standings[g][2] for g in _GROUPS]
             thirds_ranked2 = sorted(thirds2, key=lambda t:(all_pts2[t],all_gd2[t],all_gf2[t]), reverse=True)
             thirds_ws2 = [(t,all_pts2[t],all_gd2[t],all_gf2[t]) for t in thirds_ranked2]
+            # Step 1: best 8 thirds purely by pts/gd/gf
+            qualifying_thirds2 = set(t for t,_,_,_ in thirds_ws2[:8])
+
+            # Step 2: assign to bracket slots (only from qualifying thirds)
             used2 = set(); third_slot2 = {}
             for s1,s2 in R32_BRACKET:
                 for slot in (s1,s2):
                     if slot.startswith("3"):
                         allowed = set(slot[1:])
+                        assigned = None
                         for t,_,_,_ in thirds_ws2:
+                            if t not in qualifying_thirds2: continue
                             grp = next(g for g,r in group_standings.items() if r[2]==t)
                             if grp in allowed and t not in used2:
-                                used2.add(t); third_slot2[slot]=t; break
-            # used2 now contains exactly the 8 third-place teams that advance
-            advancing_thirds = used2.copy()
+                                used2.add(t); third_slot2[slot]=t
+                                assigned = t; break
+                        if assigned is None:
+                            for t,_,_,_ in thirds_ws2:
+                                if t in qualifying_thirds2 and t not in used2:
+                                    used2.add(t); third_slot2[slot]=t; break
+            advancing_thirds = qualifying_thirds2
 
             def get_slot2(s):
                 if s.startswith("1"): return group_standings[s[1]][0]

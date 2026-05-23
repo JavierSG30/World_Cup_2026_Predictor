@@ -285,7 +285,7 @@ def simulate_once(prob_cache):
         for t in teams:
             all_pts[t]=pts[t]; all_gd[t]=gd[t]; all_gf[t]=gf[t]
 
-    # Rank all 12 third-place teams by pts, gd, gf
+    # Step 1: rank all 12 thirds purely by pts/gd/gf — best 8 qualify
     thirds = [group_results[g][2] for g in GROUPS]
     thirds_ranked = sorted(
         thirds,
@@ -293,10 +293,10 @@ def simulate_once(prob_cache):
         reverse=True
     )
     thirds_with_stats = [(t, all_pts[t], all_gd[t], all_gf[t]) for t in thirds_ranked]
+    qualifying_thirds = set(t for t,_,_,_ in thirds_with_stats[:8])
 
-    # Pre-assign all third-place slots upfront to avoid duplicate assignments
-    # Each third-place slot requires the best available third from allowed groups
-    # We resolve all 8 third-place slots in bracket order, marking each used
+    # Step 2: assign qualifying thirds to bracket slots based on group constraints
+    # Qualification is already determined above — slots only decide bracket position
     used_thirds = set()
     third_slot_assignments = {}
     for s1, s2 in R32_BRACKET:
@@ -304,16 +304,18 @@ def simulate_once(prob_cache):
             if slot_str.startswith("3"):
                 allowed = set(slot_str[1:])
                 assigned = None
+                # Best qualifying third from allowed groups
                 for t, _, _, _ in thirds_with_stats:
+                    if t not in qualifying_thirds: continue
                     grp = next(g for g,ranked in group_results.items() if ranked[2]==t)
                     if grp in allowed and t not in used_thirds:
                         used_thirds.add(t)
                         assigned = t
                         break
+                # Fallback: any unused qualifying third
                 if assigned is None:
-                    # fallback: any unused third
                     for t, _, _, _ in thirds_with_stats:
-                        if t not in used_thirds:
+                        if t in qualifying_thirds and t not in used_thirds:
                             used_thirds.add(t)
                             assigned = t
                             break
