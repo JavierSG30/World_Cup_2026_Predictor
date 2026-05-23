@@ -544,6 +544,8 @@ elif page == "🎲 Run a Simulation":
                             grp = next(g for g,r in group_standings.items() if r[2]==t)
                             if grp in allowed and t not in used2:
                                 used2.add(t); third_slot2[slot]=t; break
+            # used2 now contains exactly the 8 third-place teams that advance
+            advancing_thirds = used2.copy()
 
             def get_slot2(s):
                 if s.startswith("1"): return group_standings[s[1]][0]
@@ -575,7 +577,12 @@ elif page == "🎲 Run a Simulation":
                 st.markdown(f"**Group {gname}**")
                 rows = []
                 for pos, team in enumerate(ranked, 1):
-                    adv = "✓" if pos <= 2 else ("?" if pos==3 else "")
+                    if pos <= 2:
+                        adv = "✓"
+                    elif pos == 3:
+                        adv = "✓" if team in advancing_thirds else ""
+                    else:
+                        adv = ""
                     rows.append({"Pos":pos,"Team":team,"Pts":all_pts2[team],"GD":all_gd2[team],"":adv})
                 st.dataframe(pd.DataFrame(rows).set_index("Pos"), use_container_width=True)
 
