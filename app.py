@@ -187,7 +187,7 @@ if page == "🏆 Overview":
         marker_line_width=0,
         text=[f"{v:.1f}%" for v in vals],
         textposition="outside",
-        textfont=dict(size=11, color="white"),
+        textfont=dict(size=14, color="white"),
     ))
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
