@@ -480,9 +480,42 @@ def main():
         print("  Cached for next run")
 
     print("=== Running simulations ===")
-    counts, avg_pts = run_simulations(10_000, prob_cache)
+    N = 100_000
+    counts, avg_pts = run_simulations(N, prob_cache)
 
-    print_results(counts, avg_pts, 10_000, team_stats)
+    print_results(counts, avg_pts, N, team_stats)
+
+    # Save results to JSON for the Streamlit dashboard
+    print("\n=== Saving simulation_results.json ===")
+    import json
+    all_teams = [t for g in GROUPS.values() for t in g]
+    results = {}
+    for team in all_teams:
+        results[team] = {
+            "elo":        round(team_stats[team]["elo"], 1),
+            "legacy":     round(team_stats[team]["legacy"], 1),
+            "win_rate":   round(team_stats[team]["win_rate"], 3),
+            "gd_pg":      round(team_stats[team]["gd_pg"], 3),
+            "federation": team_stats[team]["federation"],
+            "qualified":  round(100 * counts[team]["qualified"] / N, 1),
+            "r32":        round(100 * counts[team]["r32"]       / N, 1),
+            "r16":        round(100 * counts[team]["r16"]       / N, 1),
+            "qf":         round(100 * counts[team]["qf"]        / N, 1),
+            "sf":         round(100 * counts[team]["sf"]        / N, 1),
+            "final":      round(100 * counts[team]["final"]     / N, 1),
+            "winner":     round(100 * counts[team]["winner"]    / N, 1),
+            "avg_pts":    round(avg_pts[team], 2),
+            "group":      next(g for g, teams in GROUPS.items() if team in teams),
+        }
+    output = {
+        "n_sims": N,
+        "teams":  results,
+        "groups": {g: list(t) for g, t in GROUPS.items()},
+    }
+    out_path = ROOT / "simulation_results.json"
+    with open(out_path, "w") as f:
+        json.dump(output, f, indent=2)
+    print(f"  Saved → {out_path}")
 
 if __name__ == "__main__":
     main()
