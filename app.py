@@ -110,6 +110,38 @@ def results_to_df(data):
     return pd.DataFrame(rows).sort_values("winner", ascending=False).reset_index(drop=True)
 
 
+    # Flag emoji map
+FLAGS = {
+    "Spain":"🇪🇸","Argentina":"🇦🇷","France":"🇫🇷","Brazil":"🇧🇷",
+    "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Germany":"🇩🇪","Netherlands":"🇳🇱","Portugal":"🇵🇹",
+    "Croatia":"🇭🇷","Colombia":"🇨🇴","Belgium":"🇧🇪","Uruguay":"🇺🇾",
+    "Ecuador":"🇪🇨","Mexico":"🇲🇽","United States":"🇺🇸","Canada":"🇨🇦",
+    "Morocco":"🇲🇦","Senegal":"🇸🇳","Japan":"🇯🇵","South Korea":"🇰🇷",
+    "Australia":"🇦🇺","Iran":"🇮🇷","Switzerland":"🇨🇭","Denmark":"🇩🇰",
+    "Sweden":"🇸🇪","Norway":"🇳🇴","Austria":"🇦🇹","Czechia":"🇨🇿",
+    "Turkey":"🇹🇷","Türkiye":"🇹🇷","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿","Wales":"🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+    "Serbia":"🇷🇸","Poland":"🇵🇱","Ukraine":"🇺🇦","Slovakia":"🇸🇰",
+    "Hungary":"🇭🇺","Bosnia and Herzegovina":"🇧🇦","Albania":"🇦🇱",
+    "Georgia":"🇬🇪","Slovenia":"🇸🇮","Kosovo":"🇽🇰","Finland":"🇫🇮",
+    "Iceland":"🇮🇸","Romania":"🇷🇴","Bulgaria":"🇧🇬","North Macedonia":"🇲🇰",
+    "Paraguay":"🇵🇾","Chile":"🇨🇱","Peru":"🇵🇪","Venezuela":"🇻🇪","Bolivia":"🇧🇴",
+    "Costa Rica":"🇨🇷","Honduras":"🇭🇳","Jamaica":"🇯🇲","Panama":"🇵🇦",
+    "Haiti":"🇭🇹","El Salvador":"🇸🇻","Guatemala":"🇬🇹","Curaçao":"🇨🇼",
+    "Trinidad and Tobago":"🇹🇹",
+    "Egypt":"🇪🇬","Nigeria":"🇳🇬","Ghana":"🇬🇭","Ivory Coast":"🇨🇮",
+    "Algeria":"🇩🇿","Tunisia":"🇹🇳","Cameroon":"🇨🇲","South Africa":"🇿🇦",
+    "Mali":"🇲🇱","Burkina Faso":"🇧🇫","Guinea":"🇬🇳","DR Congo":"🇨🇩",
+    "Cape Verde":"🇨🇻","Benin":"🇧🇯","Gabon":"🇬🇦","Namibia":"🇳🇦",
+    "Rwanda":"🇷🇼","Mozambique":"🇲🇿","Tanzania":"🇹🇿","Uganda":"🇺🇬",
+    "Saudi Arabia":"🇸🇦","Qatar":"🇶🇦","Iraq":"🇮🇶","Jordan":"🇯🇴",
+    "UAE":"🇦🇪","Uzbekistan":"🇺🇿","Oman":"🇴🇲","Bahrain":"🇧🇭",
+    "China PR":"🇨🇳","India":"🇮🇳","Vietnam":"🇻🇳","Thailand":"🇹🇭",
+    "Indonesia":"🇮🇩","Philippines":"🇵🇭","Palestine":"🇵🇸","Lebanon":"🇱🇧",
+    "New Zealand":"🇳🇿","Fiji":"🇫🇯",
+    }
+
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR NAVIGATION
 # ══════════════════════════════════════════════════════════════════════════════
@@ -147,35 +179,6 @@ if page == "🏆 Overview":
     st.subheader("Most Likely Winners")
     top10 = df.head(10).copy()
 
-    # Flag emoji map
-    FLAGS = {
-        "Spain":"🇪🇸","Argentina":"🇦🇷","France":"🇫🇷","Brazil":"🇧🇷",
-        "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Germany":"🇩🇪","Netherlands":"🇳🇱","Portugal":"🇵🇹",
-        "Croatia":"🇭🇷","Colombia":"🇨🇴","Belgium":"🇧🇪","Uruguay":"🇺🇾",
-        "Ecuador":"🇪🇨","Mexico":"🇲🇽","United States":"🇺🇸","Canada":"🇨🇦",
-        "Morocco":"🇲🇦","Senegal":"🇸🇳","Japan":"🇯🇵","South Korea":"🇰🇷",
-        "Australia":"🇦🇺","Iran":"🇮🇷","Switzerland":"🇨🇭","Denmark":"🇩🇰",
-        "Sweden":"🇸🇪","Norway":"🇳🇴","Austria":"🇦🇹","Czechia":"🇨🇿",
-        "Turkey":"🇹🇷","Türkiye":"🇹🇷","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿","Wales":"🏴󠁧󠁢󠁷󠁬󠁳󠁿",
-        "Serbia":"🇷🇸","Poland":"🇵🇱","Ukraine":"🇺🇦","Slovakia":"🇸🇰",
-        "Hungary":"🇭🇺","Bosnia and Herzegovina":"🇧🇦","Albania":"🇦🇱",
-        "Georgia":"🇬🇪","Slovenia":"🇸🇮","Kosovo":"🇽🇰","Finland":"🇫🇮",
-        "Iceland":"🇮🇸","Romania":"🇷🇴","Bulgaria":"🇧🇬","North Macedonia":"🇲🇰",
-        "Paraguay":"🇵🇾","Chile":"🇨🇱","Peru":"🇵🇪","Venezuela":"🇻🇪","Bolivia":"🇧🇴",
-        "Costa Rica":"🇨🇷","Honduras":"🇭🇳","Jamaica":"🇯🇲","Panama":"🇵🇦",
-        "Haiti":"🇭🇹","El Salvador":"🇸🇻","Guatemala":"🇬🇹","Curaçao":"🇨🇼",
-        "Trinidad and Tobago":"🇹🇹",
-        "Egypt":"🇪🇬","Nigeria":"🇳🇬","Ghana":"🇬🇭","Ivory Coast":"🇨🇮",
-        "Algeria":"🇩🇿","Tunisia":"🇹🇳","Cameroon":"🇨🇲","South Africa":"🇿🇦",
-        "Mali":"🇲🇱","Burkina Faso":"🇧🇫","Guinea":"🇬🇳","DR Congo":"🇨🇩",
-        "Cape Verde":"🇨🇻","Benin":"🇧🇯","Gabon":"🇬🇦","Namibia":"🇳🇦",
-        "Rwanda":"🇷🇼","Mozambique":"🇲🇿","Tanzania":"🇹🇿","Uganda":"🇺🇬",
-        "Saudi Arabia":"🇸🇦","Qatar":"🇶🇦","Iraq":"🇮🇶","Jordan":"🇯🇴",
-        "UAE":"🇦🇪","Uzbekistan":"🇺🇿","Oman":"🇴🇲","Bahrain":"🇧🇭",
-        "China PR":"🇨🇳","India":"🇮🇳","Vietnam":"🇻🇳","Thailand":"🇹🇭",
-        "Indonesia":"🇮🇩","Philippines":"🇵🇭","Palestine":"🇵🇸","Lebanon":"🇱🇧",
-        "New Zealand":"🇳🇿","Fiji":"🇫🇯",
-    }
 
     labels = [f"{FLAGS.get(t,'🏳')}\n{t}" for t in top10["Team"]]
     vals   = top10["winner"].tolist()
@@ -259,18 +262,22 @@ elif page == "👥 Group Stage":
     st.divider()
 
     group_df = df[df["Team"].isin(teams)].copy()
-    group_df = group_df.sort_values("avg_pts", ascending=False)
+    group_df = group_df.sort_values("qualified", ascending=False)
 
     # ── Summary cards ─────────────────────────────────────────────────────────
     cols = st.columns(4)
     for i, (_, row) in enumerate(group_df.iterrows()):
+        flag = FLAGS.get(row["Team"], "🏳")
         with cols[i]:
             st.markdown(f"""
             <div class="metric-card">
                 <div style="font-size:0.8rem;color:#888;margin-bottom:4px">
                     #{i+1} most likely
                 </div>
-                <div style="font-size:1.1rem;font-weight:600">{row['Team']}</div>
+                <div style="font-size:2rem;line-height:1.2">{flag}</div>
+                <div style="font-size:1.05rem;font-weight:600;color:#1a1a2e;margin-top:4px">
+                    {row['Team']}
+                </div>
                 <div style="font-size:0.85rem;color:#555;margin-top:4px">
                     {row['avg_pts']:.2f} avg pts
                 </div>
@@ -301,11 +308,48 @@ elif page == "👥 Group Stage":
         use_container_width=True,
     )
 
-    # ── Bar chart ─────────────────────────────────────────────────────────────
+    # ── Bar chart — sorted descending by qualification % ──────────────────────
     st.subheader("Qualification Probability")
-    chart = group_df.set_index("Team")[["qualified"]]
-    chart.columns = ["Qualification %"]
-    st.bar_chart(chart, color="#2d6a4f")
+    group_sorted = group_df.sort_values("qualified", ascending=False)
+    labels_g = [f"{FLAGS.get(t, '🏳')}\n{t}" for t in group_sorted["Team"]]
+    vals_g   = group_sorted["qualified"].tolist()
+
+    fig_g = go.Figure(go.Bar(
+        x=labels_g,
+        y=vals_g,
+        marker_color="#2d6a4f",
+        marker_line_width=0,
+        text=[f"{v:.1f}%" for v in vals_g],
+        textposition="outside",
+        textfont=dict(size=13, color="white"),
+    ))
+    fig_g.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white", family="DM Sans"),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor="rgba(255,255,255,0.08)",
+            gridwidth=0.5,
+            showticklabels=True,
+            tickfont=dict(size=10, color="rgba(255,255,255,0.4)"),
+            zeroline=True,
+            zerolinecolor="rgba(255,255,255,0.15)",
+            zerolinewidth=1,
+            range=[0, max(vals_g)*1.18],
+        ),
+        xaxis=dict(
+            tickfont=dict(size=14),
+            tickangle=0,
+            showline=True,
+            linecolor="rgba(255,255,255,0.15)",
+            linewidth=1,
+        ),
+        margin=dict(t=40, b=20, l=40, r=0),
+        height=320,
+        showlegend=False,
+    )
+    st.plotly_chart(fig_g, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
