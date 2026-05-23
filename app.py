@@ -4,6 +4,7 @@ Run: streamlit run app.py
 """
 
 import streamlit as st
+import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import json
@@ -144,11 +145,61 @@ if page == "🏆 Overview":
 
     # ── Top 10 bar chart ──────────────────────────────────────────────────────
     st.subheader("Most Likely Winners")
-    top10 = df.head(10)
+    top10 = df.head(10).copy()
 
-    chart_data = top10[["Team", "winner"]].set_index("Team")
-    chart_data.columns = ["Win Probability (%)"]
-    st.bar_chart(chart_data, color="#1a1a2e")
+    # Flag emoji map
+    FLAGS = {
+        "Spain":"🇪🇸","Argentina":"🇦🇷","France":"🇫🇷","Brazil":"🇧🇷",
+        "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Germany":"🇩🇪","Netherlands":"🇳🇱","Portugal":"🇵🇹",
+        "Croatia":"🇭🇷","Colombia":"🇨🇴","Belgium":"🇧🇪","Uruguay":"🇺🇾",
+        "Ecuador":"🇪🇨","Mexico":"🇲🇽","United States":"🇺🇸","Canada":"🇨🇦",
+        "Morocco":"🇲🇦","Senegal":"🇸🇳","Japan":"🇯🇵","South Korea":"🇰🇷",
+        "Australia":"🇦🇺","Iran":"🇮🇷","Switzerland":"🇨🇭","Denmark":"🇩🇰",
+        "Sweden":"🇸🇪","Norway":"🇳🇴","Austria":"🇦🇹","Czechia":"🇨🇿",
+        "Turkey":"🇹🇷","Türkiye":"🇹🇷","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿","Wales":"🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+        "Serbia":"🇷🇸","Poland":"🇵🇱","Ukraine":"🇺🇦","Slovakia":"🇸🇰",
+        "Hungary":"🇭🇺","Bosnia and Herzegovina":"🇧🇦","Albania":"🇦🇱",
+        "Georgia":"🇬🇪","Slovenia":"🇸🇮","Kosovo":"🇽🇰","Finland":"🇫🇮",
+        "Iceland":"🇮🇸","Romania":"🇷🇴","Bulgaria":"🇧🇬","North Macedonia":"🇲🇰",
+        "Paraguay":"🇵🇾","Chile":"🇨🇱","Peru":"🇵🇪","Venezuela":"🇻🇪","Bolivia":"🇧🇴",
+        "Costa Rica":"🇨🇷","Honduras":"🇭🇳","Jamaica":"🇯🇲","Panama":"🇵🇦",
+        "Haiti":"🇭🇹","El Salvador":"🇸🇻","Guatemala":"🇬🇹","Curaçao":"🇨🇼",
+        "Trinidad and Tobago":"🇹🇹",
+        "Egypt":"🇪🇬","Nigeria":"🇳🇬","Ghana":"🇬🇭","Ivory Coast":"🇨🇮",
+        "Algeria":"🇩🇿","Tunisia":"🇹🇳","Cameroon":"🇨🇲","South Africa":"🇿🇦",
+        "Mali":"🇲🇱","Burkina Faso":"🇧🇫","Guinea":"🇬🇳","DR Congo":"🇨🇩",
+        "Cape Verde":"🇨🇻","Benin":"🇧🇯","Gabon":"🇬🇦","Namibia":"🇳🇦",
+        "Rwanda":"🇷🇼","Mozambique":"🇲🇿","Tanzania":"🇹🇿","Uganda":"🇺🇬",
+        "Saudi Arabia":"🇸🇦","Qatar":"🇶🇦","Iraq":"🇮🇶","Jordan":"🇯🇴",
+        "UAE":"🇦🇪","Uzbekistan":"🇺🇿","Oman":"🇴🇲","Bahrain":"🇧🇭",
+        "China PR":"🇨🇳","India":"🇮🇳","Vietnam":"🇻🇳","Thailand":"🇹🇭",
+        "Indonesia":"🇮🇩","Philippines":"🇵🇭","Palestine":"🇵🇸","Lebanon":"🇱🇧",
+        "New Zealand":"🇳🇿","Fiji":"🇫🇯",
+    }
+
+    labels = [f"{FLAGS.get(t,'🏳')}\n{t}" for t in top10["Team"]]
+    vals   = top10["winner"].tolist()
+
+    fig = go.Figure(go.Bar(
+        x=labels,
+        y=vals,
+        marker_color="#3a7bd5",
+        marker_line_width=0,
+        text=[f"{v:.1f}%" for v in vals],
+        textposition="outside",
+        textfont=dict(size=11, color="white"),
+    ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white", family="DM Sans"),
+        yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        xaxis=dict(tickfont=dict(size=12), tickangle=0),
+        margin=dict(t=40, b=20, l=0, r=0),
+        height=340,
+        showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
     # ── Full table ────────────────────────────────────────────────────────────
     st.subheader("All 48 Teams")
