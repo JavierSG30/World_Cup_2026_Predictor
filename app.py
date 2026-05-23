@@ -424,10 +424,9 @@ elif page == "⚔️ Matchup Analyser":
                     ("Draw",                               p_draw*100),
                     (f"{FLAGS.get(team2,'🏳')} {team2}", p_t2*100)]
 
-    # Sort descending
-    outcomes_sorted = sorted(outcomes, key=lambda x: x[1], reverse=True)
-    labels_m = [o[0] for o in outcomes_sorted]
-    vals_m   = [o[1] for o in outcomes_sorted]
+    # Fixed order: Team 1 | Draw (if group stage) | Team 2
+    labels_m = [o[0] for o in outcomes]
+    vals_m   = [o[1] for o in outcomes]
     colors_m = []
     for lbl in labels_m:
         if team1 in lbl:   colors_m.append("#3a7bd5")
