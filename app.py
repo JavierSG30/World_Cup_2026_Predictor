@@ -187,14 +187,14 @@ if page == "🏆 Overview":
         marker_line_width=0,
         text=[f"{v:.1f}%" for v in vals],
         textposition="outside",
-        textfont=dict(size=12, color="white"),
+        textfont=dict(size=13, color="white"),
     ))
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="white", family="DM Sans"),
         yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-        xaxis=dict(tickfont=dict(size=20), tickangle=0),
+        xaxis=dict(tickfont=dict(size=14), tickangle=0),
         margin=dict(t=40, b=20, l=0, r=0),
         height=340,
         showlegend=False,
