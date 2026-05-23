@@ -256,8 +256,16 @@ def resolve_slot(slot_str, group_results, thirds_ranked):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def ko_match(t1, t2, prob_cache):
-    p_h, p_d, _ = prob_cache[(t1,t2)]
-    return t1 if np.random.random() < p_h + p_d/2 else t2
+    p_h, p_d, p_a = prob_cache[(t1,t2)]
+    # Redistribute draw probability proportionally to existing win probabilities.
+    # If p_h=0.5, p_a=0.3, p_d=0.2:
+    #   t1 threshold = 0.5 + 0.2*(0.5/0.8) = 0.625
+    #   t2 threshold = 0.3 + 0.2*(0.3/0.8) = 0.375  (complement)
+    denom = p_h + p_a
+    if denom == 0:
+        return t1  # edge case: both zero, default to t1
+    p_h_ko = p_h + p_d * p_h / denom
+    return t1 if np.random.random() < p_h_ko else t2
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 6. SIMULATE ONE FULL TOURNAMENT WITH REAL BRACKET
@@ -472,9 +480,9 @@ def main():
         print("  Cached for next run")
 
     print("=== Running simulations ===")
-    counts, avg_pts = run_simulations(100000, prob_cache)
+    counts, avg_pts = run_simulations(10_000, prob_cache)
 
-    print_results(counts, avg_pts, 100000, team_stats)
+    print_results(counts, avg_pts, 10_000, team_stats)
 
 if __name__ == "__main__":
     main()
