@@ -148,7 +148,7 @@ FLAGS = {
 
 with st.sidebar:
     st.markdown('<div class="sidebar-title">⚽ WC 2026 Predictor</div>', unsafe_allow_html=True)
-    st.caption("Monte Carlo simulation · 10,000 runs · Random Forest")
+    st.caption("Monte Carlo simulation · 100,000 runs · Random Forest")
     st.divider()
 
     page = st.radio(
@@ -714,9 +714,9 @@ elif page == "📊 Methodology":
     st.subheader("Overview")
     st.markdown("""
     This predictor uses a **Random Forest classifier** trained on 11,500+ competitive 
-    international football matches from 2000–2025. Match outcome probabilities (Win / Draw / Loss) 
+    international football matches from 2010–2025. Match outcome probabilities (Win / Draw / Loss) 
     are fed into a **Monte Carlo simulation** that plays out the full 2026 FIFA World Cup bracket 
-    10,000 times, producing stable probability estimates for each team at every stage.
+    100,000 times, producing stable probability estimates for each team at every stage.
     """)
 
     st.subheader("Features")
@@ -763,8 +763,10 @@ elif page == "📊 Methodology":
     based on group finish (1E vs best-3(ABCDF), etc.). Third-place teams are ranked by points, 
     then goal difference, then goals scored, and the best 8 advance.
     
-    In knockout rounds, draw probability is redistributed 50/50 to each team (simulating extra 
-    time and penalties). All World Cup matches are treated as neutral venue.
+    In knockout rounds, draw probability is redistributed proportionally to each team based on 
+    their relative win probabilities, so a team with a higher win probability absorbs a larger
+    share of the draw probability (simulating extra time and penalties). All World Cup matches 
+    are treated as neutral venue.
     
     Match probabilities are **symmetrised** — averaged over both team orderings — to remove 
     any artificial home/away bias.
