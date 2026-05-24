@@ -759,7 +759,7 @@ elif page == "📊 Methodology":
 
     st.subheader("Tournament Simulation")
     st.markdown("""
-    The simulation follows the **real FIFA 2026 bracket structure** exactly — fixed R32 pairings 
+    The simulation follows the **real FIFA 2026 bracket structure** exactly; fixed R32 pairings 
     based on group finish (1E vs best-3(ABCDF), etc.). Third-place teams are ranked by points, 
     then goal difference, then goals scored, and the best 8 advance.
     
@@ -768,8 +768,7 @@ elif page == "📊 Methodology":
     share of the draw probability (simulating extra time and penalties). All World Cup matches 
     are treated as neutral venue.
     
-    Match probabilities are **symmetrised** — averaged over both team orderings — to remove 
-    any artificial home/away bias.
+    Match probabilities are calculated at a neutral venue, meaning no home/away advantage is applied (even for Canada, Mexico, & USA).
     """)
 
     st.subheader("Data Sources")
