@@ -149,7 +149,11 @@ def compute_most_likely_path(prob_cache, data):
         else: return third_slot.get(s,"TBD")
 
     def ko_det(t1, t2):
-        p_h, p_d, p_a = prob_cache[(t1,t2)]
+        # Handle both tuple keys (local) and "t1||t2" string keys (from JSON)
+        val = prob_cache.get((t1,t2)) or prob_cache.get(f"{t1}||{t2}")
+        if val is None:
+            val = (0.5, 0.0, 0.5)
+        p_h, p_d, p_a = val
         denom = p_h + p_a
         p_ko  = (p_h + p_d * p_h / denom) if denom > 0 else 0.5
         return (t1, p_ko) if p_ko >= 0.5 else (t2, 1-p_ko)
@@ -489,8 +493,10 @@ elif page == "⚔️ Matchup Analyser":
     is_knockout = match_type == "Knockout (no draws)"
 
     # Get symmetric base probabilities
-    p_h1, p_d1, p_a1 = prob_cache[(team1, team2)]
-    p_h2, p_d2, p_a2 = prob_cache[(team2, team1)]
+    def _get_prob(a, b):
+        return prob_cache.get((a,b)) or prob_cache.get(f"{a}||{b}") or (0.5,0.0,0.5)
+    p_h1, p_d1, p_a1 = _get_prob(team1, team2)
+    p_h2, p_d2, p_a2 = _get_prob(team2, team1)
     p_t1_base  = (p_h1 + p_a2) / 2
     p_draw_base = (p_d1 + p_d2) / 2
     p_t2_base  = (p_a1 + p_h2) / 2
