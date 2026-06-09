@@ -52,50 +52,32 @@ GROUPS = {
     "L": ["England",       "Croatia",                "Ghana",       "Panama"],
 }
 
-# ── Real FIFA 2026 R32 bracket slots ─────────────────────────────────────────
-# Each slot: (team_slot_1, team_slot_2)
-# team slots are tuples: (group, position) where position 0=1st,1=2nd,2=best3rd
-# best3rd slots specify which groups the third-place team must come from
-# Format: ("1E") = group E winner, ("2C") = group C runner-up,
-#         ("3ABCDF") = best third from groups A,B,C,D,F
 R32_BRACKET = [
-    # Left side — these 8 pairs feed into Left QF1 and Left QF2
-    # Left QF1 (L1 winner vs L2 winner, L3 winner vs L4 winner)
-    ("1E",  "3ABCDF"),   # L1
-    ("1I",  "3CDFGH"),   # L2
-    ("2A",  "2B"),        # L3
-    ("1F",  "2C"),        # L4
-    # Left QF2
-    ("2K",  "2L"),        # L5
-    ("1H",  "2J"),        # L6
-    ("1D",  "3BEFIJ"),   # L7
-    ("1G",  "3AEHIJ"),   # L8
-    # Right side
-    # Right QF1
-    ("1C",  "2F"),        # R1
-    ("2E",  "2I"),        # R2
-    ("1A",  "3CEFHI"),   # R3
-    ("1L",  "3EHIJK"),   # R4
-    # Right QF2
-    ("1J",  "2H"),        # R5
-    ("2D",  "2G"),        # R6
-    ("1B",  "3EFGIJ"),   # R7
-    ("1K",  "3DEIJL"),   # R8
+    ("1E",  "3ABCDF"),
+    ("1I",  "3CDFGH"),
+    ("2A",  "2B"),
+    ("1F",  "2C"),
+    ("2K",  "2L"),
+    ("1H",  "2J"),
+    ("1D",  "3BEFIJ"),
+    ("1G",  "3AEHIJ"),
+    ("1C",  "2F"),
+    ("2E",  "2I"),
+    ("1A",  "3CEFHI"),
+    ("1L",  "3EHIJK"),
+    ("1J",  "2H"),
+    ("2D",  "2G"),
+    ("1B",  "3EFGIJ"),
+    ("1K",  "3DEIJL"),
 ]
 
-# R16: pairs of R32 slot indices (0-indexed)
 R16_PAIRS = [(0,1),(2,3),(4,5),(6,7),(8,9),(10,11),(12,13),(14,15)]
-# QF: pairs of R16 slot indices
 QF_PAIRS  = [(0,1),(2,3),(4,5),(6,7)]
-# SF: pairs of QF slot indices
 SF_PAIRS  = [(0,1),(2,3)]
 
-ROUNDS       = ["r32","r16","qf","sf","final","winner"]
-FED_COLS     = ["AFC","CAF","CONCACAF","CONMEBOL","OFC","OTHER","UEFA"]
+ROUNDS   = ["r32","r16","qf","sf","final","winner"]
+FED_COLS = ["AFC","CAF","CONCACAF","CONMEBOL","OFC","OTHER","UEFA"]
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 1. TEAM FEATURES
-# ══════════════════════════════════════════════════════════════════════════════
 
 def compute_team_features(results_path):
     df = pd.read_csv(results_path, parse_dates=["date"])
@@ -155,9 +137,6 @@ def compute_team_features(results_path):
 
     return team_features
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. PRE-COMPUTE SYMMETRIC PAIRWISE PROBABILITIES
-# ══════════════════════════════════════════════════════════════════════════════
 
 def precompute_probs(model, team_stats, feat_cols):
     all_teams  = [t for g in GROUPS.values() for t in g]
@@ -182,7 +161,6 @@ def precompute_probs(model, team_stats, feat_cols):
             probs = model.predict_proba(X)[0]
             raw_cache[(home,away)] = (probs[2], probs[1], probs[0])
 
-    # Symmetrise: average both orderings
     prob_cache = {}
     for home in all_teams:
         for away in all_teams:
@@ -200,9 +178,6 @@ def precompute_probs(model, team_stats, feat_cols):
                 )
     return prob_cache
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. GROUP STAGE SIMULATION
-# ══════════════════════════════════════════════════════════════════════════════
 
 def simulate_group(teams, prob_cache):
     pts = defaultdict(int)
@@ -227,55 +202,20 @@ def simulate_group(teams, prob_cache):
     ranked = sorted(teams, key=lambda t:(pts[t],gd[t],gf[t]), reverse=True)
     return ranked, {t: pts[t] for t in teams}, {t: gd[t] for t in teams}, {t: gf[t] for t in teams}
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. RESOLVE BRACKET SLOT → ACTUAL TEAM
-# ══════════════════════════════════════════════════════════════════════════════
-
-def resolve_slot(slot_str, group_results, thirds_ranked):
-    """
-    slot_str examples: '1E', '2C', '3ABCDF'
-    group_results: {gname: [1st,2nd,3rd,4th]}
-    thirds_ranked: list of (team, pts, gd, gf) sorted best→worst
-    """
-    if slot_str.startswith("1"):
-        g = slot_str[1]
-        return group_results[g][0]
-    elif slot_str.startswith("2"):
-        g = slot_str[1]
-        return group_results[g][1]
-    else:  # best third from allowed groups
-        allowed = set(slot_str[1:])
-        for team, _, _, _ in thirds_ranked:
-            grp = next(g for g,ranked in group_results.items() if ranked[2]==team)
-            if grp in allowed:
-                return team
-        return thirds_ranked[0][0]  # fallback
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. KNOCKOUT MATCH (no draw — redistribute draw prob)
-# ══════════════════════════════════════════════════════════════════════════════
 
 def ko_match(t1, t2, prob_cache):
     p_h, p_d, p_a = prob_cache[(t1,t2)]
-    # Redistribute draw probability proportionally to existing win probabilities.
-    # If p_h=0.5, p_a=0.3, p_d=0.2:
-    #   t1 threshold = 0.5 + 0.2*(0.5/0.8) = 0.625
-    #   t2 threshold = 0.3 + 0.2*(0.3/0.8) = 0.375  (complement)
     denom = p_h + p_a
     if denom == 0:
-        return t1  # edge case: both zero, default to t1
+        return t1
     p_h_ko = p_h + p_d * p_h / denom
     return t1 if np.random.random() < p_h_ko else t2
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 6. SIMULATE ONE FULL TOURNAMENT WITH REAL BRACKET
-# ══════════════════════════════════════════════════════════════════════════════
 
 def simulate_once(prob_cache):
     all_teams = [t for g in GROUPS.values() for t in g]
     progress  = {t: "group" for t in all_teams}
 
-    # ── Group stage ───────────────────────────────────────────────────────────
     group_results = {}
     all_pts, all_gd, all_gf = {}, {}, {}
 
@@ -287,16 +227,11 @@ def simulate_once(prob_cache):
 
     # Step 1: rank all 12 thirds purely by pts/gd/gf — best 8 qualify
     thirds = [group_results[g][2] for g in GROUPS]
-    thirds_ranked = sorted(
-        thirds,
-        key=lambda t: (all_pts[t], all_gd[t], all_gf[t]),
-        reverse=True
-    )
-    thirds_with_stats = [(t, all_pts[t], all_gd[t], all_gf[t]) for t in thirds_ranked]
+    thirds_ranked = sorted(thirds, key=lambda t:(all_pts[t],all_gd[t],all_gf[t]), reverse=True)
+    thirds_with_stats = [(t,all_pts[t],all_gd[t],all_gf[t]) for t in thirds_ranked]
     qualifying_thirds = set(t for t,_,_,_ in thirds_with_stats[:8])
 
-    # Step 2: assign qualifying thirds to bracket slots based on group constraints
-    # Qualification is already determined above — slots only decide bracket position
+    # Step 2: assign qualifying thirds to bracket slots
     used_thirds = set()
     third_slot_assignments = {}
     for s1, s2 in R32_BRACKET:
@@ -304,78 +239,55 @@ def simulate_once(prob_cache):
             if slot_str.startswith("3"):
                 allowed = set(slot_str[1:])
                 assigned = None
-                # Best qualifying third from allowed groups
-                for t, _, _, _ in thirds_with_stats:
+                for t,_,_,_ in thirds_with_stats:
                     if t not in qualifying_thirds: continue
                     grp = next(g for g,ranked in group_results.items() if ranked[2]==t)
                     if grp in allowed and t not in used_thirds:
-                        used_thirds.add(t)
-                        assigned = t
-                        break
-                # Fallback: any unused qualifying third
+                        used_thirds.add(t); assigned = t; break
                 if assigned is None:
-                    for t, _, _, _ in thirds_with_stats:
+                    for t,_,_,_ in thirds_with_stats:
                         if t in qualifying_thirds and t not in used_thirds:
-                            used_thirds.add(t)
-                            assigned = t
-                            break
+                            used_thirds.add(t); assigned = t; break
                 third_slot_assignments[slot_str] = assigned
 
     def get_slot_team(slot_str):
-        if slot_str.startswith("1"):
-            return group_results[slot_str[1]][0]
-        elif slot_str.startswith("2"):
-            return group_results[slot_str[1]][1]
-        else:
-            return third_slot_assignments[slot_str]
+        if slot_str.startswith("1"): return group_results[slot_str[1]][0]
+        elif slot_str.startswith("2"): return group_results[slot_str[1]][1]
+        else: return third_slot_assignments[slot_str]
 
-    # ── Round of 32 ───────────────────────────────────────────────────────────
     r32_teams = []
     for s1, s2 in R32_BRACKET:
-        t1 = get_slot_team(s1)
-        t2 = get_slot_team(s2)
-        # Mark both teams as having qualified from the group stage
-        progress[t1] = "qualified"
-        progress[t2] = "qualified"
+        t1 = get_slot_team(s1); t2 = get_slot_team(s2)
+        progress[t1] = "qualified"; progress[t2] = "qualified"
         winner = ko_match(t1, t2, prob_cache)
-        progress[winner] = "r32"
-        r32_teams.append(winner)
+        progress[winner] = "r32"; r32_teams.append(winner)
 
-    # ── Round of 16 ───────────────────────────────────────────────────────────
     r16_teams = []
     for i1, i2 in R16_PAIRS:
         winner = ko_match(r32_teams[i1], r32_teams[i2], prob_cache)
-        progress[winner] = "r16"
-        r16_teams.append(winner)
+        progress[winner] = "r16"; r16_teams.append(winner)
 
-    # ── Quarter-finals ────────────────────────────────────────────────────────
     qf_teams = []
     for i1, i2 in QF_PAIRS:
         winner = ko_match(r16_teams[i1], r16_teams[i2], prob_cache)
-        progress[winner] = "qf"
-        qf_teams.append(winner)
+        progress[winner] = "qf"; qf_teams.append(winner)
 
-    # ── Semi-finals ───────────────────────────────────────────────────────────
     sf_teams = []
     for i1, i2 in SF_PAIRS:
         winner = ko_match(qf_teams[i1], qf_teams[i2], prob_cache)
-        progress[winner] = "sf"
-        sf_teams.append(winner)
+        progress[winner] = "sf"; sf_teams.append(winner)
 
-    # ── Final ─────────────────────────────────────────────────────────────────
     if len(sf_teams) >= 2:
         champion = ko_match(sf_teams[0], sf_teams[1], prob_cache)
         progress[champion] = "winner"
 
     return progress, all_pts
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 7. RUN SIMULATIONS
-# ══════════════════════════════════════════════════════════════════════════════
 
 def reached(progress_val, target_round):
     order = ["group", "qualified"] + ROUNDS
     return order.index(progress_val) >= order.index(target_round)
+
 
 def run_simulations(n, prob_cache):
     all_teams = [t for g in GROUPS.values() for t in g]
@@ -387,29 +299,21 @@ def run_simulations(n, prob_cache):
         if i % 1000 == 0: print(".", end="", flush=True)
         result, group_pts = simulate_once(prob_cache)
         for team, prog in result.items():
-            # Count group qualification separately (binary: did they make R32?)
-            if prog != "group":
-                counts[team]["qualified"] += 1
-            # Count knockout round progression
+            if prog != "group": counts[team]["qualified"] += 1
             for rnd in ROUNDS:
-                if reached(prog, rnd):
-                    counts[team][rnd] += 1
+                if reached(prog, rnd): counts[team][rnd] += 1
         for team, pts in group_pts.items():
             pts_total[team] += pts
     print(" done.\n")
     avg_pts = {t: pts_total[t]/n for t in all_teams}
     return counts, avg_pts
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 8. PRINT RESULTS
-# ══════════════════════════════════════════════════════════════════════════════
 
 def print_results(counts, avg_pts, n, team_stats):
     all_teams = sorted(counts.keys(), key=lambda t: counts[t]["winner"], reverse=True)
 
     print("=" * 78)
     print(f"  2026 WORLD CUP SIMULATION RESULTS  ({n:,} simulations)")
-    print(f"  (Real FIFA 2026 bracket structure)")
     print("=" * 78)
     print(f"  {'Team':<28} {'R32':>5} {'R16':>5} {'QF':>5} "
           f"{'SF':>5} {'Final':>6} {'Win%':>6}  {'Elo':>6}")
@@ -440,17 +344,11 @@ def print_results(counts, avg_pts, n, team_stats):
         print(f"    {'─'*28} {'─'*6}  {'─'*8}  {'─'*20}")
         ranked = sorted(teams, key=lambda t: avg_pts[t], reverse=True)
         for team in ranked:
-            # Qualification probability is P(advance from group) — capped at 100%
-            # Teams can appear in R32 as 1st, 2nd, or best-third
-            # We show P(advance) directly from simulation counts
             qual_pct = 100 * counts[team]["qualified"] / n
             pts      = avg_pts[team]
             bar      = "█" * int(min(qual_pct, 100) / 5)
             print(f"    {team:<28} {qual_pct:>5.1f}%  {pts:>8.2f}  {bar}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=== Loading model ===")
@@ -461,7 +359,6 @@ def main():
     cache_path = ROOT / "models" / "team_stats_cache.pkl"
     prob_path  = ROOT / "models" / "prob_cache.pkl"
 
-    # Recompute if model or results.csv is newer than cache
     results_mtime = (ROOT / "data" / "raw" / "results.csv").stat().st_mtime
     model_mtime   = (MODELS / "logistic_model.pkl").stat().st_mtime
     cache_mtime   = cache_path.stat().st_mtime if cache_path.exists() else 0
@@ -487,9 +384,10 @@ def main():
 
     print_results(counts, avg_pts, N, team_stats)
 
-    # Save results to JSON for the Streamlit dashboard
-    print("\n=== Saving simulation_results.json ===")
     import json
+
+    # Save simulation_results.json
+    print("\n=== Saving simulation_results.json ===")
     all_teams = [t for g in GROUPS.values() for t in g]
     results = {}
     for team in all_teams:
@@ -509,15 +407,27 @@ def main():
             "avg_pts":    round(avg_pts[team], 2),
             "group":      next(g for g, teams in GROUPS.items() if team in teams),
         }
-    output = {
-        "n_sims": N,
-        "teams":  results,
-        "groups": {g: list(t) for g, t in GROUPS.items()},
-    }
-    out_path = ROOT / "simulation_results.json"
-    with open(out_path, "w") as f:
+    output = {"n_sims": N, "teams": results, "groups": {g: list(t) for g, t in GROUPS.items()}}
+    with open(ROOT / "simulation_results.json", "w") as f:
         json.dump(output, f, indent=2)
-    print(f"  Saved → {out_path}")
+    print(f"  Saved → {ROOT / 'simulation_results.json'}")
+
+    # Export prob_cache.json and team_stats.json for Streamlit dashboard
+    print("\n=== Exporting prob_cache.json and team_stats.json ===")
+    prob_json = {f"{k[0]}||{k[1]}": list(v) for k, v in prob_cache.items()}
+    with open(ROOT / "prob_cache.json", "w") as f:
+        json.dump(prob_json, f)
+    print(f"  Saved → {ROOT / 'prob_cache.json'}")
+
+    ts_json = {}
+    for team, stats in team_stats.items():
+        ts_json[team] = {k: float(v) if hasattr(v, "item") else v for k, v in stats.items()}
+    with open(ROOT / "team_stats.json", "w") as f:
+        json.dump(ts_json, f)
+    print(f"  Saved → {ROOT / 'team_stats.json'}")
+
+    print("\n✓ All dashboard files updated. Push to GitHub to deploy.")
+
 
 if __name__ == "__main__":
     main()
