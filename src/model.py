@@ -36,6 +36,7 @@ MODEL_CHOICE = "forest"
 # Penalises draw misclassifications more heavily during training.
 #
 #   None        — no weighting (current behaviour)
+#   "moderate"  - Lighter weighting than "balanced" to force realistic draw prob
 #   "balanced"  — auto-weights inversely proportional to class frequency
 #                 Draw ≈1.52×, Away Win ≈1.11×, Home Win ≈0.69×
 #   "aggressive"— manually amplified draw weight, stronger push toward draws
@@ -44,7 +45,7 @@ MODEL_CHOICE = "forest"
 # Note: class_weight is NOT supported by GradientBoostingClassifier.
 # It is ignored if MODEL_CHOICE = "gradient".
 #
-CLASS_WEIGHT = "balanced"
+CLASS_WEIGHT = None
 #
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -101,13 +102,13 @@ def evaluate(name, model, X, y, split_name="val"):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def resolve_class_weight():
-    """Converts CLASS_WEIGHT setting to sklearn-compatible format."""
     if CLASS_WEIGHT is None:
         return None
     elif CLASS_WEIGHT == "balanced":
         return "balanced"
+    elif CLASS_WEIGHT == "moderate":
+        return {0: 1.0, 1: 1.1, 2: 1.0}   # draw gets a gentle nudge
     elif CLASS_WEIGHT == "aggressive":
-        # 0=Away Win, 1=Draw, 2=Home Win
         return {0: 1.0, 1: 3.0, 2: 1.0}
     else:
         raise ValueError(f"Unknown CLASS_WEIGHT: {CLASS_WEIGHT}")

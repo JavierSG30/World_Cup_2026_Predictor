@@ -65,24 +65,21 @@ def analyse_matchup(team1, team2, model, feat_cols, team_stats):
 
     p_t1, p_draw, p_t2 = neutral_probs(team1, team2, model, team_stats, feat_cols)
 
-    # For feature contributions, use the averaged scaled inputs
-    scaler    = model.named_steps["scaler"]
-    clf       = model.named_steps["clf"]
-    X1_scaled = scaler.transform(build_row(team1, team2, team_stats, feat_cols))
-    X2_scaled = scaler.transform(build_row(team2, team1, team_stats, feat_cols))
+    # Unwrap Pipeline if logistic regression, otherwise use model directly
+    if hasattr(model, "named_steps"):
+        scaler = model.named_steps["scaler"]
+        clf    = model.named_steps["clf"]
+    else:
+        scaler = None
+        clf    = model
 
-    coef_home = clf.coef_[2]
-    coef_away = clf.coef_[0]
-
-    # Net contribution averaged over both orderings
-    contributions = []
-    for i, fname in enumerate(feat_cols):
-        # In ordering 1: team1 is home
-        net1 = coef_home[i] * X1_scaled[0][i] - coef_away[i] * X1_scaled[0][i]
-        # In ordering 2: team1 is away — flip sign to keep "favours team1" consistent
-        net2 = -(coef_home[i] * X2_scaled[0][i] - coef_away[i] * X2_scaled[0][i])
-        contributions.append((fname, (net1 + net2) / 2))
-    contributions.sort(key=lambda x: abs(x[1]), reverse=True)
+    # Scale inputs if scaler exists (logistic regression only)
+    if scaler is not None:
+        X1_scaled = scaler.transform(build_row(team1, team2, team_stats, feat_cols))
+        X2_scaled = scaler.transform(build_row(team2, team1, team_stats, feat_cols))
+    else:
+        X1_scaled = build_row(team1, team2, team_stats, feat_cols).values
+        X2_scaled = build_row(team2, team1, team_stats, feat_cols).values
 
     W = 70
     print()
@@ -117,24 +114,51 @@ def analyse_matchup(team1, team2, model, feat_cols, team_stats):
     print(f"  {'Federation':<20} {h['federation']:>22}    {a['federation']:<22}")
 
     print(f"\n  FEATURE CONTRIBUTIONS")
-    print(f"  (positive = favours {team1}, negative = favours {team2})")
     print(f"  {'─'*62}")
-    print(f"  {'Feature':<30} {'Net effect':>12}  Direction")
-    print(f"  {'─'*30} {'─'*12}  {'─'*25}")
 
-    for fname, net in contributions[:12]:
-        if abs(net) < 0.001:
-            continue
-        direction = f"favours {team1}" if net > 0 else f"favours {team2}"
-        bar = ("█" if net > 0 else "░") * min(int(abs(net) * 15), 25)
-        print(f"  {fname:<30} {net:>+12.4f}  {direction}  {bar}")
+    # Feature contributions only available for logistic regression (has coef_)
+    if hasattr(clf, "coef_"):
+        coef_home = clf.coef_[2]
+        coef_away = clf.coef_[0]
 
-    print(f"\n  SUMMARY")
-    print(f"  {'─'*62}")
-    t1_adv = [f for f, n in contributions if n > 0.05]
-    t2_adv = [f for f, n in contributions if n < -0.05]
-    print(f"  Favours {team1:<20}: {', '.join(t1_adv[:4]) if t1_adv else 'none'}")
-    print(f"  Favours {team2:<20}: {', '.join(t2_adv[:4]) if t2_adv else 'none'}")
+        print(f"  (positive = favours {team1}, negative = favours {team2})")
+        print(f"  {'Feature':<30} {'Net effect':>12}  Direction")
+        print(f"  {'─'*30} {'─'*12}  {'─'*25}")
+
+        contributions = []
+        for i, fname in enumerate(feat_cols):
+            # In ordering 1: team1 is home
+            net1 = coef_home[i] * X1_scaled[0][i] - coef_away[i] * X1_scaled[0][i]
+            # In ordering 2: team1 is away — flip sign to keep "favours team1" consistent
+            net2 = -(coef_home[i] * X2_scaled[0][i] - coef_away[i] * X2_scaled[0][i])
+            contributions.append((fname, (net1 + net2) / 2))
+        contributions.sort(key=lambda x: abs(x[1]), reverse=True)
+
+        for fname, net in contributions[:12]:
+            if abs(net) < 0.001:
+                continue
+            direction = f"favours {team1}" if net > 0 else f"favours {team2}"
+            bar = ("█" if net > 0 else "░") * min(int(abs(net) * 15), 25)
+            print(f"  {fname:<30} {net:>+12.4f}  {direction}  {bar}")
+
+        print(f"\n  SUMMARY")
+        print(f"  {'─'*62}")
+        t1_adv = [f for f, n in contributions if n > 0.05]
+        t2_adv = [f for f, n in contributions if n < -0.05]
+        print(f"  Favours {team1:<20}: {', '.join(t1_adv[:4]) if t1_adv else 'none'}")
+        print(f"  Favours {team2:<20}: {', '.join(t2_adv[:4]) if t2_adv else 'none'}")
+
+    else:
+        # Random Forest / Gradient Boosting — show feature importances instead
+        print(f"  (Feature contributions not available for tree-based models)")
+        if hasattr(clf, "feature_importances_"):
+            importances = list(zip(feat_cols, clf.feature_importances_))
+            importances.sort(key=lambda x: x[1], reverse=True)
+            print(f"  {'Feature':<30} {'Importance':>12}")
+            print(f"  {'─'*30} {'─'*12}")
+            for fname, imp in importances[:12]:
+                bar = "█" * min(int(imp * 100), 25)
+                print(f"  {fname:<30} {imp:>12.4f}  {bar}")
 
     if p_t1 > p_t2 and p_t1 > p_draw:
         winner, pct = team1, p_t1
@@ -148,8 +172,8 @@ def analyse_matchup(team1, team2, model, feat_cols, team_stats):
 
 def main():
     # ── EDIT THESE TWO LINES TO CHANGE THE MATCHUP ───────────────────────────
-    TEAM_1 = "USA"
-    TEAM_2 = "Belgium"
+    TEAM_1 = "Spain"
+    TEAM_2 = "Argentina"
     # ─────────────────────────────────────────────────────────────────────────
 
     with open(MODELS / "logistic_model.pkl", "rb") as f: model     = pickle.load(f)
