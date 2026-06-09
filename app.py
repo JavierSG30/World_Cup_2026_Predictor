@@ -109,6 +109,67 @@ def results_to_df(data):
         rows.append({"Team": team, **stats})
     return pd.DataFrame(rows).sort_values("winner", ascending=False).reset_index(drop=True)
 
+def compute_most_likely_path(prob_cache, data):
+    """Deterministic bracket: highest probability team wins every match."""
+    GROUPS_L = data["groups"]
+    R32_B = [
+        ("1E","3ABCDF"),("1I","3CDFGH"),("2A","2B"),("1F","2C"),
+        ("2K","2L"),("1H","2J"),("1D","3BEFIJ"),("1G","3AEHIJ"),
+        ("1C","2F"),("2E","2I"),("1A","3CEFHI"),("1L","3EHIJK"),
+        ("1J","2H"),("2D","2G"),("1B","3EFGIJ"),("1K","3DEIJL"),
+    ]
+    R16_P = [(0,1),(2,3),(4,5),(6,7),(8,9),(10,11),(12,13),(14,15)]
+    QF_P  = [(0,1),(2,3),(4,5),(6,7)]
+    SF_P  = [(0,1),(2,3)]
+    td    = data["teams"]
+
+    group_results = {}
+    for gname, teams in GROUPS_L.items():
+        group_results[gname] = sorted(teams, key=lambda t: td[t]["avg_pts"], reverse=True)
+
+    all_thirds = [(g, group_results[g][2]) for g in GROUPS_L]
+    thirds_sorted = sorted(all_thirds, key=lambda x: td[x[1]]["avg_pts"], reverse=True)
+    qualifying_thirds = {t for _,t in thirds_sorted[:8]}
+    thirds_by_pts = [(t, td[t]["avg_pts"]) for _,t in thirds_sorted]
+
+    used = set(); third_slot = {}
+    for s1,s2 in R32_B:
+        for slot in (s1,s2):
+            if slot.startswith("3"):
+                allowed = set(slot[1:])
+                for t,_ in thirds_by_pts:
+                    if t not in qualifying_thirds: continue
+                    grp = next(g for g,r in group_results.items() if r[2]==t)
+                    if grp in allowed and t not in used:
+                        used.add(t); third_slot[slot]=t; break
+
+    def get_slot(s):
+        if s.startswith("1"): return group_results[s[1]][0]
+        elif s.startswith("2"): return group_results[s[1]][1]
+        else: return third_slot.get(s,"TBD")
+
+    def ko_det(t1, t2):
+        p_h, p_d, p_a = prob_cache[(t1,t2)]
+        denom = p_h + p_a
+        p_ko  = (p_h + p_d * p_h / denom) if denom > 0 else 0.5
+        return (t1, p_ko) if p_ko >= 0.5 else (t2, 1-p_ko)
+
+    r32,r16,qf,sf = [],[],[],[]
+    for s1,s2 in R32_B:
+        t1,t2 = get_slot(s1),get_slot(s2); w,p = ko_det(t1,t2)
+        r32.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
+    for i1,i2 in R16_P:
+        t1,t2 = r32[i1]["winner"],r32[i2]["winner"]; w,p = ko_det(t1,t2)
+        r16.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
+    for i1,i2 in QF_P:
+        t1,t2 = r16[i1]["winner"],r16[i2]["winner"]; w,p = ko_det(t1,t2)
+        qf.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
+    for i1,i2 in SF_P:
+        t1,t2 = qf[i1]["winner"],qf[i2]["winner"]; w,p = ko_det(t1,t2)
+        sf.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
+    t1,t2 = sf[0]["winner"],sf[1]["winner"]; champ,p = ko_det(t1,t2)
+    return group_results, r32, r16, qf, sf, {"t1":t1,"t2":t2,"winner":champ,"prob":p}
+
 
     # Flag emoji map
 FLAGS = {
@@ -238,6 +299,50 @@ if page == "🏆 Overview":
         use_container_width=True,
         height=600,
     )
+
+    # ── Most likely path ──────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("🗺️ Most Likely Tournament Path", expanded=False):
+        st.caption("Deterministic bracket: the higher-probability team wins every match.")
+        _, _, prob_cache_mlp, _ = load_model()
+        gr, r32m, r16m, qfm, sfm, finalm = compute_most_likely_path(prob_cache_mlp, data)
+
+        # Group winners summary
+        st.markdown("**Most likely group finishes (1st / 2nd)**")
+        gcols = st.columns(4)
+        for i, (gname, ranked) in enumerate(gr.items()):
+            with gcols[i % 4]:
+                f1 = FLAGS.get(ranked[0],"🏳"); f2 = FLAGS.get(ranked[1],"🏳")
+                st.markdown(f"**Group {gname}**  "
+                            f"{f1} {ranked[0]}  /  {f2} {ranked[1]}")
+
+        st.divider()
+
+        def match_row(stage, matches):
+            st.markdown(f"**{stage}**")
+            cols = st.columns(min(len(matches), 4))
+            for i, m in enumerate(matches):
+                with cols[i % 4]:
+                    f1 = FLAGS.get(m["t1"],"🏳"); f2 = FLAGS.get(m["t2"],"🏳")
+                    fw = FLAGS.get(m["winner"],"🏳")
+                    st.markdown(
+                        f"{f1} {m['t1']} vs {f2} {m['t2']}  \n"
+                        f"→ **{fw} {m['winner']}** ({m['prob']*100:.0f}%)"
+                    )
+
+        match_row("Round of 32", r32m)
+        st.divider()
+        match_row("Round of 16", r16m)
+        st.divider()
+        match_row("Quarter-finals", qfm)
+        st.divider()
+        match_row("Semi-finals", sfm)
+        st.divider()
+
+        fw = FLAGS.get(finalm["winner"],"🏳")
+        f1 = FLAGS.get(finalm["t1"],"🏳"); f2 = FLAGS.get(finalm["t2"],"🏳")
+        st.markdown(f"**Final:** {f1} {finalm['t1']} vs {f2} {finalm['t2']}")
+        st.markdown(f"## 🏆 {fw} {finalm['winner']} ({finalm['prob']*100:.0f}%)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
