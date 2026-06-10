@@ -110,92 +110,74 @@ def results_to_df(data):
     return pd.DataFrame(rows).sort_values("winner", ascending=False).reset_index(drop=True)
 
 def compute_most_likely_path(prob_cache, data):
-    """Deterministic bracket with actual points from most-likely match outcomes."""
-    GROUPS_L = data["groups"]
-    R32_B = [
-        ("1E","3ABCDF"),("1I","3CDFGH"),("2A","2B"),("1F","2C"),
-        ("2K","2L"),("1H","2J"),("1D","3BEFIJ"),("1G","3AEHIJ"),
-        ("1C","2F"),("2E","2I"),("1A","3CEFHI"),("1L","3EHIJK"),
-        ("1J","2H"),("2D","2G"),("1B","3EFGIJ"),("1K","3DEIJL"),
-    ]
+    """Deterministic bracket: backtracking slot assignment, no TBD."""
+    GROUPS_L=data["groups"]
+    R32_B=[("1E","3ABCDF"),("1I","3CDFGH"),("2A","2B"),("1F","2C"),
+           ("2K","2L"),("1H","2J"),("1D","3BEFIJ"),("1G","3AEHIJ"),
+           ("1C","2F"),("2E","2I"),("1A","3CEFHI"),("1L","3EHIJK"),
+           ("1J","2H"),("2D","2G"),("1B","3EFGIJ"),("1K","3DEIJL")]
     R16_P=[(0,1),(2,3),(4,5),(6,7),(8,9),(10,11),(12,13),(14,15)]
-    QF_P =[(0,1),(2,3),(4,5),(6,7)]
-    SF_P =[(0,1),(2,3)]
+    QF_P=[(0,1),(2,3),(4,5),(6,7)]; SF_P=[(0,1),(2,3)]
 
-    def get_prob(h,a):
-        return prob_cache.get((h,a)) or prob_cache.get(f"{h}||{a}") or (0.5,0.0,0.5)
+    def gp(h,a): return prob_cache.get((h,a)) or prob_cache.get(f"{h}||{a}") or (0.5,0.0,0.5)
 
-    # Play each match as most-likely outcome, track actual points
-    def det_outcome(h,a):
-        p_h,p_d,p_a = get_prob(h,a)
-        if p_h>=p_d and p_h>=p_a: return "home"
-        if p_d>=p_h and p_d>=p_a: return "draw"
-        return "away"
+    def det(h,a):
+        p_h,p_d,p_a=gp(h,a)
+        return "home" if p_h>=p_d and p_h>=p_a else ("draw" if p_d>=p_h and p_d>=p_a else "away")
 
-    group_results = {}
-    group_pts_det = {}
-    for gname, teams in GROUPS_L.items():
-        pts = {t:0 for t in teams}
-        pairs = [(teams[i],teams[j]) for i in range(4) for j in range(i+1,4)]
-        for h,a in pairs:
-            outcome = det_outcome(h,a)
-            if outcome=="home":   pts[h]+=3
-            elif outcome=="draw": pts[h]+=1; pts[a]+=1
-            else:                 pts[a]+=3
-        ranked = sorted(teams, key=lambda t: pts[t], reverse=True)
-        group_results[gname] = ranked
-        for t in teams: group_pts_det[t] = pts[t]
+    group_results={}; group_pts_det={}
+    for gname,teams in GROUPS_L.items():
+        pts={t:0 for t in teams}
+        for h,a in [(teams[i],teams[j]) for i in range(4) for j in range(i+1,4)]:
+            o=det(h,a)
+            if o=="home": pts[h]+=3
+            elif o=="draw": pts[h]+=1; pts[a]+=1
+            else: pts[a]+=3
+        ranked=sorted(teams,key=lambda t:pts[t],reverse=True)
+        group_results[gname]=ranked
+        for t in teams: group_pts_det[t]=pts[t]
 
-    # Best 8 thirds by actual deterministic points
-    all_thirds = [(g, group_results[g][2]) for g in GROUPS_L]
-    thirds_sorted = sorted(all_thirds, key=lambda x: group_pts_det[x[1]], reverse=True)
-    qualifying_thirds = {t for _,t in thirds_sorted[:8]}
-    qual_groups = {}
-    for _,t in thirds_sorted[:8]:
-        grp = next(g for g,r in group_results.items() if r[2]==t)
-        qual_groups[grp] = t
+    all_thirds=[(g,group_results[g][2]) for g in GROUPS_L]
+    thirds_sorted=sorted(all_thirds,key=lambda x:group_pts_det[x[1]],reverse=True)
+    qualifying_thirds={t for _,t in thirds_sorted[:8]}
+    qual_groups={next(g for g,r in group_results.items() if r[2]==t):t for _,t in thirds_sorted[:8]}
 
-    # Assign thirds to slots using backtracking — guarantees no TBD
-    slots_needed = [s for s1,s2 in R32_B for s in (s1,s2) if s.startswith("3")]
-
-    def backtrack(idx, assignment, used_grps):
-        if idx == len(slots_needed): return assignment
-        slot = slots_needed[idx]
-        allowed = set(slot[1:])
+    slots=[s for s1,s2 in R32_B for s in (s1,s2) if s.startswith("3")]
+    def bt(idx,asgn,used):
+        if idx==len(slots): return asgn
+        slot=slots[idx]; allowed=set(slot[1:])
         for g,t in qual_groups.items():
-            if g in allowed and g not in used_grps:
-                res = backtrack(idx+1, {**assignment,slot:t}, used_grps|{g})
-                if res is not None: return res
+            if g in allowed and g not in used:
+                r=bt(idx+1,{**asgn,slot:t},used|{g})
+                if r is not None: return r
         return None
-
-    third_slot = backtrack(0, {}, set()) or {}
+    third_slot=bt(0,{},set()) or {}
 
     def get_slot(s):
         if s.startswith("1"): return group_results[s[1]][0]
         elif s.startswith("2"): return group_results[s[1]][1]
         else: return third_slot.get(s,"TBD")
 
-    def ko_det(t1,t2):
-        p_h,p_d,p_a = get_prob(t1,t2)
-        denom=p_h+p_a
-        p_ko=(p_h+p_d*p_h/denom) if denom>0 else 0.5
-        return (t1,p_ko) if p_ko>=0.5 else (t2,1-p_ko)
+    def ko(t1,t2):
+        p_h,p_d,p_a=gp(t1,t2); d=p_h+p_a
+        pk=(p_h+p_d*p_h/d) if d>0 else 0.5
+        return (t1,pk) if pk>=0.5 else (t2,1-pk)
 
     r32,r16,qf,sf=[],[],[],[]
     for s1,s2 in R32_B:
-        t1,t2=get_slot(s1),get_slot(s2); w,p=ko_det(t1,t2)
+        t1,t2=get_slot(s1),get_slot(s2); w,p=ko(t1,t2)
         r32.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
     for i1,i2 in R16_P:
-        t1,t2=r32[i1]["winner"],r32[i2]["winner"]; w,p=ko_det(t1,t2)
+        t1,t2=r32[i1]["winner"],r32[i2]["winner"]; w,p=ko(t1,t2)
         r16.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
     for i1,i2 in QF_P:
-        t1,t2=r16[i1]["winner"],r16[i2]["winner"]; w,p=ko_det(t1,t2)
+        t1,t2=r16[i1]["winner"],r16[i2]["winner"]; w,p=ko(t1,t2)
         qf.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
     for i1,i2 in SF_P:
-        t1,t2=qf[i1]["winner"],qf[i2]["winner"]; w,p=ko_det(t1,t2)
+        t1,t2=qf[i1]["winner"],qf[i2]["winner"]; w,p=ko(t1,t2)
         sf.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
-    t1,t2=sf[0]["winner"],sf[1]["winner"]; champ,p=ko_det(t1,t2)
-    return group_results, qualifying_thirds, group_pts_det, r32, r16, qf, sf, {"t1":t1,"t2":t2,"winner":champ,"prob":p}
+    t1,t2=sf[0]["winner"],sf[1]["winner"]; champ,p=ko(t1,t2)
+    return group_results,qualifying_thirds,r32,r16,qf,sf,{"t1":t1,"t2":t2,"winner":champ,"prob":p}
 
 
     # Flag emoji map
@@ -332,22 +314,21 @@ if page == "🏆 Overview":
     with st.expander("🗺️ Most Likely Tournament Path", expanded=False):
         st.caption("Deterministic bracket: the higher-probability team wins every match.")
         _, _, prob_cache_mlp, _ = load_model()
-        gr, qual_thirds, grp_pts_exp, r32m, r16m, qfm, sfm, finalm = compute_most_likely_path(prob_cache_mlp, data)
+        gr, qual_thirds, r32m, r16m, qfm, sfm, finalm = compute_most_likely_path(prob_cache_mlp, data)
 
-        # Group results as tables
+        # Group results — status + team only, no points
         st.markdown("##### Group Stage")
         gcols = st.columns(4)
-        group_items = list(gr.items())
-        for idx, (gname, ranked) in enumerate(group_items):
+        for idx, (gname, ranked) in enumerate(gr.items()):
             with gcols[idx % 4]:
                 st.markdown(f"**Group {gname}**")
                 rows = []
                 for pos, team in enumerate(ranked, 1):
                     flag = FLAGS.get(team,"🏳")
-                    if pos <= 2:                   status = "✅"
-                    elif team in qual_thirds:      status = "⭐"
-                    else:                          status = "❌"
-                    rows.append({"": status, "Team": f"{flag} {team}", "Pts": grp_pts_exp[team]})
+                    if pos <= 2:              status = "✅"
+                    elif team in qual_thirds: status = "⭐"
+                    else:                     status = "❌"
+                    rows.append({"": status, "Team": f"{flag} {team}"})
                 st.dataframe(pd.DataFrame(rows).set_index(""),
                              use_container_width=True, hide_index=False, height=172)
 
@@ -363,82 +344,65 @@ if page == "🏆 Overview":
             out=[f'<svg width="100%" viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="background:{BG};border-radius:10px;font-family:sans-serif">']
 
             def b(x,y,team,is_w,is_c=False):
-                flag=FLAGS.get(team,"🏳")
-                bg=GOLD if is_c else (WIN if is_w else BOX)
+                flag=FLAGS.get(team,"🏳"); bg=GOLD if is_c else (WIN if is_w else BOX)
                 tc="#000" if is_c else (TEXT if is_w else "#777")
                 lbl=f"{flag} {team[:13]}." if len(team)>13 else f"{flag} {team}"
                 out.append(f'<rect x="{x:.0f}" y="{y:.0f}" width="{BW}" height="{BH}" rx="3" fill="{bg}" stroke="#2a2a3a" stroke-width="0.8"/>')
                 out.append(f'<text x="{x+BW/2:.0f}" y="{y+BH/2+3:.0f}" text-anchor="middle" fill="{tc}" font-size="8">{lbl}</text>')
 
-            def conn_l(x1,y1,x2,y2):
-                mid=(x1+x2)/2
-                out.append(f'<polyline points="{x1:.0f},{y1:.0f} {mid:.0f},{y1:.0f} {mid:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
+            def cl(x1,y1,x2,y2):
+                m=(x1+x2)/2; out.append(f'<polyline points="{x1:.0f},{y1:.0f} {m:.0f},{y1:.0f} {m:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
 
-            def conn_r(x1,y1,x2,y2):
-                mid=(x1+x2)/2
-                out.append(f'<polyline points="{x2:.0f},{y1:.0f} {mid:.0f},{y1:.0f} {mid:.0f},{y2:.0f} {x1:.0f},{y2:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
+            def cr(x1,y1,x2,y2):
+                m=(x1+x2)/2; out.append(f'<polyline points="{x2:.0f},{y1:.0f} {m:.0f},{y1:.0f} {m:.0f},{y2:.0f} {x1:.0f},{y2:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
 
-            def pct(x,y,p):
-                out.append(f'<text x="{x:.0f}" y="{y:.0f}" text-anchor="middle" fill="#f0b429" font-size="7">{p*100:.0f}%</text>')
+            def pct(x,y,p): out.append(f'<text x="{x:.0f}" y="{y:.0f}" text-anchor="middle" fill="#f0b429" font-size="7">{p*100:.0f}%</text>')
 
             def my(i): return 30+i*(BH*2+GAP+MGAP)
 
-            def draw_l(x,matches,prev_cys=None,prev_x=None):
+            def dl(x,ms,pc=None,px=None):
                 cys=[]
-                for i,m in enumerate(matches):
-                    ybox=(prev_cys[i*2]+prev_cys[i*2+1])/2-BH-GAP/2 if prev_cys else my(i)
-                    if prev_cys:
-                        conn_l(prev_x+BW,prev_cys[i*2],x,ybox+BH/2)
-                        conn_l(prev_x+BW,prev_cys[i*2+1],x,ybox+BH+GAP+BH/2)
-                    b(x,ybox,m["t1"],m["winner"]==m["t1"])
-                    b(x,ybox+BH+GAP,m["t2"],m["winner"]==m["t2"])
-                    pct(x+BW/2,ybox+BH*2+GAP+9,m["prob"])
-                    cys.append(ybox+BH+GAP/2)
+                for i,m in enumerate(ms):
+                    yb=(pc[i*2]+pc[i*2+1])/2-BH-GAP/2 if pc else my(i)
+                    if pc: cl(px+BW,pc[i*2],x,yb+BH/2); cl(px+BW,pc[i*2+1],x,yb+BH+GAP+BH/2)
+                    b(x,yb,m["t1"],m["winner"]==m["t1"]); b(x,yb+BH+GAP,m["t2"],m["winner"]==m["t2"])
+                    pct(x+BW/2,yb+BH*2+GAP+9,m["prob"]); cys.append(yb+BH+GAP/2)
                 return cys
 
-            def draw_r(x,matches,prev_cys=None,prev_x=None):
+            def dr(x,ms,pc=None,px=None):
                 cys=[]
-                for i,m in enumerate(matches):
-                    ybox=(prev_cys[i*2]+prev_cys[i*2+1])/2-BH-GAP/2 if prev_cys else my(i)
-                    if prev_cys:
-                        conn_r(prev_x,prev_cys[i*2],x+BW,ybox+BH/2)
-                        conn_r(prev_x,prev_cys[i*2+1],x+BW,ybox+BH+GAP+BH/2)
-                    b(x,ybox,m["t1"],m["winner"]==m["t1"])
-                    b(x,ybox+BH+GAP,m["t2"],m["winner"]==m["t2"])
-                    pct(x+BW/2,ybox+BH*2+GAP+9,m["prob"])
-                    cys.append(ybox+BH+GAP/2)
+                for i,m in enumerate(ms):
+                    yb=(pc[i*2]+pc[i*2+1])/2-BH-GAP/2 if pc else my(i)
+                    if pc: cr(px,pc[i*2],x+BW,yb+BH/2); cr(px,pc[i*2+1],x+BW,yb+BH+GAP+BH/2)
+                    b(x,yb,m["t1"],m["winner"]==m["t1"]); b(x,yb+BH+GAP,m["t2"],m["winner"]==m["t2"])
+                    pct(x+BW/2,yb+BH*2+GAP+9,m["prob"]); cys.append(yb+BH+GAP/2)
                 return cys
 
             XS=18
-            x0=8; cy0L=draw_l(x0,r32[:8])
-            x1=x0+BW+XS; cy1L=draw_l(x1,r16[:4],cy0L,x0)
-            x2=x1+BW+XS; cy2L=draw_l(x2,qf[:2],cy1L,x1)
-            x3=x2+BW+XS; cy3L=draw_l(x3,sf[:1],cy2L,x2)
+            x0=8;   c0L=dl(x0,r32[:8])
+            x1=x0+BW+XS; c1L=dl(x1,r16[:4],c0L,x0)
+            x2=x1+BW+XS; c2L=dl(x2,qf[:2],c1L,x1)
+            x3=x2+BW+XS; c3L=dl(x3,sf[:1],c2L,x2)
+            x0r=W-8-BW; c0R=dr(x0r,r32[8:])
+            x1r=x0r-BW-XS; c1R=dr(x1r,r16[4:],c0R,x0r)
+            x2r=x1r-BW-XS; c2R=dr(x2r,qf[2:],c1R,x1r)
+            x3r=x2r-BW-XS; c3R=dr(x3r,sf[1:],c2R,x2r)
 
-            x0r=W-8-BW; cy0R=draw_r(x0r,r32[8:])
-            x1r=x0r-BW-XS; cy1R=draw_r(x1r,r16[4:],cy0R,x0r)
-            x2r=x1r-BW-XS; cy2R=draw_r(x2r,qf[2:],cy1R,x1r)
-            x3r=x2r-BW-XS; cy3R=draw_r(x3r,sf[1:],cy2R,x2r)
-
-            xfc=W//2-BW//2
-            yf=(cy3L[0]+cy3R[0])/2-BH-GAP/2
+            xfc=W//2-BW//2; yf=(c3L[0]+c3R[0])/2-BH-GAP/2
             b(xfc,yf,final["t1"],final["winner"]==final["t1"])
             b(xfc,yf+BH+GAP,final["t2"],final["winner"]==final["t2"])
-            conn_l(x3+BW,cy3L[0],xfc,yf+BH/2)
-            conn_r(x3r,cy3R[0],xfc+BW,yf+BH+GAP+BH/2)
+            cl(x3+BW,c3L[0],xfc,yf+BH/2)
+            cr(x3r,c3R[0],xfc+BW,yf+BH+GAP+BH/2)
 
-            ych=yf+BH*2+GAP+22
-            fc=FLAGS.get(final["winner"],"🏳")
+            ych=yf+BH*2+GAP+22; fc=FLAGS.get(final["winner"],"🏳")
             lc=f"🏆 {fc} {final['winner']}"
             out.append(f'<rect x="{xfc:.0f}" y="{ych:.0f}" width="{BW}" height="{BH+6}" rx="4" fill="{GOLD}" stroke="#aaa" stroke-width="0.8"/>')
             out.append(f'<text x="{xfc+BW/2:.0f}" y="{ych+BH/2+6:.0f}" text-anchor="middle" fill="#000" font-size="9" font-weight="bold">{lc}</text>')
             pct(xfc+BW/2,yf+BH*2+GAP+10,final["prob"])
-
             for lbl,x in [("R32",x0),("R16",x1),("QF",x2),("SF",x3),
                             ("FINAL",xfc),("SF",x3r),("QF",x2r),("R16",x1r),("R32",x0r)]:
                 out.append(f'<text x="{x+BW/2:.0f}" y="20" text-anchor="middle" fill="{DIM}" font-size="8">{lbl}</text>')
-            out.append("</svg>")
-            return "\n".join(out)
+            out.append("</svg>"); return "\n".join(out)
 
         st.markdown(mlp_svg(r32m,r16m,qfm,sfm,finalm), unsafe_allow_html=True)
 
@@ -587,8 +551,9 @@ elif page == "⚔️ Matchup Analyser":
     is_knockout = match_type == "Knockout (no draws)"
 
     # Get symmetric base probabilities
-    p_h1, p_d1, p_a1 = prob_cache[(team1, team2)]
-    p_h2, p_d2, p_a2 = prob_cache[(team2, team1)]
+    def _gp(a,b): return prob_cache.get((a,b)) or prob_cache.get(f"{a}||{b}") or (0.5,0.0,0.5)
+    p_h1,p_d1,p_a1=_gp(team1,team2)
+    p_h2,p_d2,p_a2=_gp(team2,team1)
     p_t1_base  = (p_h1 + p_a2) / 2
     p_draw_base = (p_d1 + p_d2) / 2
     p_t2_base  = (p_a1 + p_h2) / 2
