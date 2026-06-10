@@ -109,6 +109,7 @@ def results_to_df(data):
         rows.append({"Team": team, **stats})
     return pd.DataFrame(rows).sort_values("winner", ascending=False).reset_index(drop=True)
 
+
 def compute_most_likely_path(prob_cache, data):
     """Deterministic bracket: highest probability team wins every match."""
     GROUPS_L = data["groups"]
@@ -149,10 +150,7 @@ def compute_most_likely_path(prob_cache, data):
         else: return third_slot.get(s,"TBD")
 
     def ko_det(t1, t2):
-        # Handle both tuple keys (local) and "t1||t2" string keys (from JSON)
-        val = prob_cache.get((t1,t2)) or prob_cache.get(f"{t1}||{t2}")
-        if val is None:
-            val = (0.5, 0.0, 0.5)
+        val = prob_cache.get((t1,t2)) or prob_cache.get(f"{t1}||{t2}") or (0.5,0.0,0.5)
         p_h, p_d, p_a = val
         denom = p_h + p_a
         p_ko  = (p_h + p_d * p_h / denom) if denom > 0 else 0.5
@@ -172,10 +170,10 @@ def compute_most_likely_path(prob_cache, data):
         t1,t2 = qf[i1]["winner"],qf[i2]["winner"]; w,p = ko_det(t1,t2)
         sf.append({"t1":t1,"t2":t2,"winner":w,"prob":p})
     t1,t2 = sf[0]["winner"],sf[1]["winner"]; champ,p = ko_det(t1,t2)
-    return group_results, r32, r16, qf, sf, {"t1":t1,"t2":t2,"winner":champ,"prob":p}
+    return group_results, qualifying_thirds, r32, r16, qf, sf, {"t1":t1,"t2":t2,"winner":champ,"prob":p}
 
 
-    # Flag emoji map
+
 FLAGS = {
     "Spain":"🇪🇸","Argentina":"🇦🇷","France":"🇫🇷","Brazil":"🇧🇷",
     "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Germany":"🇩🇪","Netherlands":"🇳🇱","Portugal":"🇵🇹",
@@ -306,47 +304,123 @@ if page == "🏆 Overview":
 
     # ── Most likely path ──────────────────────────────────────────────────────
     st.divider()
-    with st.expander("🗺️ Most Likely Tournament Path", expanded=False):
-        st.caption("Deterministic bracket: the higher-probability team wins every match.")
-        _, _, prob_cache_mlp, _ = load_model()
-        gr, r32m, r16m, qfm, sfm, finalm = compute_most_likely_path(prob_cache_mlp, data)
+    st.subheader("🗺️ Most Likely Tournament Path")
+    st.caption("Deterministic bracket — the higher-probability team wins every match")
 
-        # Group winners summary
-        st.markdown("**Most likely group finishes (1st / 2nd)**")
-        gcols = st.columns(4)
-        for i, (gname, ranked) in enumerate(gr.items()):
-            with gcols[i % 4]:
-                f1 = FLAGS.get(ranked[0],"🏳"); f2 = FLAGS.get(ranked[1],"🏳")
-                st.markdown(f"**Group {gname}**  "
-                            f"{f1} {ranked[0]}  /  {f2} {ranked[1]}")
+    _, _, prob_cache_mlp, _ = load_model()
+    gr, qual_thirds, r32m, r16m, qfm, sfm, finalm = compute_most_likely_path(prob_cache_mlp, data)
 
-        st.divider()
+    # ── Group results ─────────────────────────────────────────────────────────
+    st.markdown("##### Group Stage")
+    gcols = st.columns(4)
+    group_items = list(gr.items())
+    for i, (gname, ranked) in enumerate(group_items):
+        with gcols[i % 4]:
+            lines = [f"**Group {gname}**"]
+            for pos, team in enumerate(ranked, 1):
+                flag = FLAGS.get(team,"🏳")
+                if pos <= 2:
+                    lines.append(f"✅ {flag} {team}")
+                elif pos == 3 and team in qual_thirds:
+                    lines.append(f"⭐ {flag} {team}")
+                else:
+                    lines.append(f"❌ {flag} {team}")
+            st.markdown("  \n".join(lines))
 
-        def match_row(stage, matches):
-            st.markdown(f"**{stage}**")
-            cols = st.columns(min(len(matches), 4))
+    st.caption("✅ qualified as top-2  ·  ⭐ qualified as best third  ·  ❌ eliminated")
+
+    # ── Bracket SVG ───────────────────────────────────────────────────────────
+    st.markdown("##### Knockout Bracket")
+
+    def mlp_bracket_svg(r32, r16, qf, sf, final):
+        W, H = 1100, 700
+        BG="#0f1117"; BOX="#1e2130"; WIN="#1a3a1a"; TEXT="#e0e0e0"
+        DIM="#555"; GOLD="#f0b429"; LINE="#333"
+        BW=108; BH=20; GAP=5; MGAP=28
+
+        out = []
+        out.append(f'<svg width="100%" viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" style="background:{BG};border-radius:10px;font-family:sans-serif">')
+
+        def b(x, y, team, is_winner, is_champ=False):
+            flag = FLAGS.get(team,"🏳")
+            bg = GOLD if is_champ else (WIN if is_winner else BOX)
+            tc = "#000" if is_champ else (TEXT if is_winner else "#aaa")
+            lbl = f"{flag} {team}"
+            if len(lbl) > 16: lbl = f"{flag} {team[:13]}."
+            fs = 8
+            out.append(f'<rect x="{x:.0f}" y="{y:.0f}" width="{BW}" height="{BH}" rx="3" fill="{bg}" stroke="#2a2a3a" stroke-width="0.8"/>')
+            out.append(f'<text x="{x+BW/2:.0f}" y="{y+BH/2+3:.0f}" text-anchor="middle" fill="{tc}" font-size="{fs}">{lbl}</text>')
+
+        def conn(x1,y1,x2,y2):
+            mx=(x1+x2)/2
+            out.append(f'<polyline points="{x1:.0f},{y1:.0f} {mx:.0f},{y1:.0f} {mx:.0f},{y2:.0f} {x2:.0f},{y2:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
+
+        def prob_label(x, y, prob):
+            out.append(f'<text x="{x:.0f}" y="{y:.0f}" text-anchor="middle" fill="#f0b429" font-size="7">{prob*100:.0f}%</text>')
+
+        def match_y(i): return 30 + i*(BH*2+GAP+MGAP)
+
+        def draw_col(x, matches, cy_prev=None, right=False):
+            cys = []
             for i, m in enumerate(matches):
-                with cols[i % 4]:
-                    f1 = FLAGS.get(m["t1"],"🏳"); f2 = FLAGS.get(m["t2"],"🏳")
-                    fw = FLAGS.get(m["winner"],"🏳")
-                    st.markdown(
-                        f"{f1} {m['t1']} vs {f2} {m['t2']}  \n"
-                        f"→ **{fw} {m['winner']}** ({m['prob']*100:.0f}%)"
-                    )
+                if cy_prev is not None:
+                    y1c, y2c = cy_prev[i*2], cy_prev[i*2+1]
+                    ybox = (y1c+y2c)/2 - BH - GAP/2
+                else:
+                    ybox = match_y(i)
+                b(x, ybox,        m["t1"], m["winner"]==m["t1"])
+                b(x, ybox+BH+GAP, m["t2"], m["winner"]==m["t2"])
+                if cy_prev is not None:
+                    if right:
+                        conn(cy_prev[i*2+0], y1c, x+BW, ybox+BH/2) if False else None
+                        out.append(f'<polyline points="{x+BW:.0f},{ybox+BH/2:.0f} {x+BW+8:.0f},{ybox+BH/2:.0f} {x+BW+8:.0f},{y1c:.0f} {cy_prev[i*2]:.0f},{y1c:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
+                        out.append(f'<polyline points="{x+BW:.0f},{ybox+BH+GAP+BH/2:.0f} {x+BW+8:.0f},{ybox+BH+GAP+BH/2:.0f} {x+BW+8:.0f},{y2c:.0f} {cy_prev[i*2+1]:.0f},{y2c:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
+                    else:
+                        conn(x, ybox+BH/2,        cy_prev[i*2], y1c)
+                        conn(x, ybox+BH+GAP+BH/2, cy_prev[i*2+1], y2c)
+                cy = ybox + BH + GAP/2
+                prob_label(x + BW/2, ybox + BH*2 + GAP + 9, m["prob"])
+                cys.append(cy)
+            return cys
 
-        match_row("Round of 32", r32m)
-        st.divider()
-        match_row("Round of 16", r16m)
-        st.divider()
-        match_row("Quarter-finals", qfm)
-        st.divider()
-        match_row("Semi-finals", sfm)
-        st.divider()
+        x0=8
+        cy0L = draw_col(x0, r32[:8])
+        x1=x0+BW+20; cy1L = draw_col(x1, r16[:4], cy0L)
+        x2=x1+BW+20; cy2L = draw_col(x2, qf[:2],  cy1L)
+        x3=x2+BW+20; cy3L = draw_col(x3, sf[:1],   cy2L)
 
-        fw = FLAGS.get(finalm["winner"],"🏳")
-        f1 = FLAGS.get(finalm["t1"],"🏳"); f2 = FLAGS.get(finalm["t2"],"🏳")
-        st.markdown(f"**Final:** {f1} {finalm['t1']} vs {f2} {finalm['t2']}")
-        st.markdown(f"## 🏆 {fw} {finalm['winner']} ({finalm['prob']*100:.0f}%)")
+        x0r=W-8-BW
+        cy0R = draw_col(x0r, r32[8:])
+        x1r=x0r-BW-20; cy1R = draw_col(x1r, r16[4:], cy0R, right=True)
+        x2r=x1r-BW-20; cy2R = draw_col(x2r, qf[2:],  cy1R, right=True)
+        x3r=x2r-BW-20; cy3R = draw_col(x3r, sf[1:],   cy2R, right=True)
+
+        # Final
+        xfc=W//2-BW//2
+        yf=(cy3L[0]+cy3R[0])/2-BH-GAP/2
+        b(xfc, yf,        final["t1"], final["winner"]==final["t1"])
+        b(xfc, yf+BH+GAP, final["t2"], final["winner"]==final["t2"])
+        conn(x3+BW, cy3L[0], xfc, yf+BH/2)
+        out.append(f'<polyline points="{x3r:.0f},{cy3R[0]:.0f} {x3r-8:.0f},{cy3R[0]:.0f} {x3r-8:.0f},{yf+BH+GAP+BH/2:.0f} {xfc+BW:.0f},{yf+BH+GAP+BH/2:.0f}" fill="none" stroke="{LINE}" stroke-width="0.8"/>')
+
+        # Champion
+        ych = yf+BH*2+GAP+22
+        flag_c = FLAGS.get(final["winner"],"🏳")
+        lbl_c = f"🏆 {flag_c} {final['winner']}"
+        out.append(f'<rect x="{xfc:.0f}" y="{ych:.0f}" width="{BW}" height="{BH+6}" rx="4" fill="{GOLD}" stroke="#888" stroke-width="0.8"/>')
+        out.append(f'<text x="{xfc+BW/2:.0f}" y="{ych+BH/2+6:.0f}" text-anchor="middle" fill="#000" font-size="9" font-weight="bold">{lbl_c}</text>')
+        prob_label(xfc+BW/2, yf+BH*2+GAP+10, final["prob"])
+
+        # Column headers
+        for lbl, x in [("R32",x0),("R16",x1),("QF",x2),("SF",x3),
+                        ("FINAL",xfc),("SF",x3r),("QF",x2r),("R16",x1r),("R32",x0r)]:
+            out.append(f'<text x="{x+BW/2:.0f}" y="20" text-anchor="middle" fill="{DIM}" font-size="8">{lbl}</text>')
+
+        out.append("</svg>")
+        return "\n".join(out)
+
+    svg_mlp = mlp_bracket_svg(r32m, r16m, qfm, sfm, finalm)
+    st.markdown(svg_mlp, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -493,10 +567,10 @@ elif page == "⚔️ Matchup Analyser":
     is_knockout = match_type == "Knockout (no draws)"
 
     # Get symmetric base probabilities
-    def _get_prob(a, b):
+    def _gp(a, b):
         return prob_cache.get((a,b)) or prob_cache.get(f"{a}||{b}") or (0.5,0.0,0.5)
-    p_h1, p_d1, p_a1 = _get_prob(team1, team2)
-    p_h2, p_d2, p_a2 = _get_prob(team2, team1)
+    p_h1, p_d1, p_a1 = _gp(team1, team2)
+    p_h2, p_d2, p_a2 = _gp(team2, team1)
     p_t1_base  = (p_h1 + p_a2) / 2
     p_draw_base = (p_d1 + p_d2) / 2
     p_t2_base  = (p_a1 + p_h2) / 2
